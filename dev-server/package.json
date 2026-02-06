@@ -1,0 +1,25 @@
+{
+    "name": "dev-server",
+    "version": "0.0.0",
+    "private": true,
+    "scripts": {
+        "populate": "node -r ts-node/register -r dotenv/config populate.ts",
+        "dev:server": "node -r ts-node/register -r dotenv/config index.ts",
+        "dev:worker": "node -r ts-node/register -r dotenv/config index-worker.ts",
+        "dev": "concurrently npm:dev:server npm:dev:worker"
+    },
+    "dependencies": {
+        "@vendure/asset-server-plugin": "^3.5.3",
+        "@vendure/common": "^3.5.3",
+        "@vendure/core": "^3.5.3",
+        "@vendure/graphiql-plugin": "^3.5.3",
+        "@vendure/testing": "^3.5.3",
+        "better-sqlite3": "^11.0.0",
+        "dotenv": "^16.4.0",
+        "ts-node": "^10.9.0",
+        "typescript": "5.8.2"
+    },
+    "devDependencies": {
+        "concurrently": "^9.2.0"
+    }
+}

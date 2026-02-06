@@ -8,3 +8,9 @@ __data__/
 .idea/
 .vscode/
 *.log
+.env
+
+# Dev server artifacts
+dev-server/assets/
+dev-server/vendure.sqlite
+dev-server/import-assets/
