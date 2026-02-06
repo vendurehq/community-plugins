@@ -36,9 +36,10 @@ registerInitializer('mariadb', new MysqlInitializer());
 
 export const testConfig = () => {
     const index = getIndexOfTestFileInParentDir();
+    const packageOffset = getPackagePortOffset();
     return mergeConfig(defaultTestConfig, {
         apiOptions: {
-            port: 3010 + index,
+            port: 3010 + packageOffset + index,
         },
         importExportOptions: {
             importAssetsDir: path.join(packageDir, 'fixtures/assets'),
@@ -84,6 +85,19 @@ function getCallerFilename(depth: number): string {
     } while (stack.length && file === 'module.js');
 
     return file;
+}
+
+/**
+ * Each package gets a unique port offset so that e2e tests from
+ * different packages can run in parallel without port conflicts.
+ */
+function getPackagePortOffset(): number {
+    const pkg = process.env.PACKAGE || '';
+    let hash = 0;
+    for (const char of pkg) {
+        hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+    }
+    return (Math.abs(hash) % 20) * 100;
 }
 
 function getDbConfig(): DataSourceOptions {
