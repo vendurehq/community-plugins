@@ -3,13 +3,13 @@ import { SortOrder } from '@vendure/common/lib/generated-types';
 import { SimpleGraphQLClient } from '@vendure/testing';
 import { expect } from 'vitest';
 
-import { SearchGetPricesQuery, SearchInput } from '../../core/e2e/graphql/generated-e2e-admin-types';
+import { SearchGetPricesQuery, SearchInput } from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-admin-types';
 import {
     LogicalOperator,
     SearchProductsShopQuery,
     SearchProductsShopQueryVariables,
-} from '../../core/e2e/graphql/generated-e2e-shop-types';
-import { SEARCH_PRODUCTS_SHOP } from '../../core/e2e/graphql/shop-definitions';
+} from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-shop-types';
+import { SEARCH_PRODUCTS_SHOP } from '../../../e2e-common/vendure-e2e-utils/graphql/shop-definitions';
 import { deleteIndices } from '../src/indexing/indexing-utils';
 
 import { SEARCH_GET_PRICES, SEARCH_PRODUCTS } from './elasticsearch-plugin.e2e-spec';

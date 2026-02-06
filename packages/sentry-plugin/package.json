@@ -1,6 +1,6 @@
 {
-    "name": "@vendure/sentry-plugin",
-    "version": "3.5.3",
+    "name": "@vendure-community/sentry-plugin",
+    "version": "1.0.0",
     "license": "GPL-3.0-or-later",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -19,11 +19,12 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/vendurehq/vendure"
+        "url": "https://github.com/vendurehq/vendure-community-plugins",
+        "directory": "packages/sentry-plugin"
     },
     "scripts": {
         "watch": "tsc -p ./tsconfig.build.json --watch",
-        "build": "rimraf lib && tsc -p ./tsconfig.build.json",
+        "build": "rimraf dist && tsc -p ./tsconfig.build.json",
         "lint": "eslint --fix ."
     },
     "homepage": "https://www.vendure.io",
@@ -31,9 +32,14 @@
     "publishConfig": {
         "access": "public"
     },
+    "peerDependencies": {
+        "@vendure/core": ">=3.0.0",
+        "@vendure/common": ">=3.0.0"
+    },
     "devDependencies": {
-        "@vendure/common": "3.5.3",
-        "@vendure/core": "3.5.3"
+        "@vendure/common": "^3.5.3",
+        "@vendure/core": "^3.5.3",
+        "@vendure/testing": "^3.5.3"
     },
     "dependencies": {
         "@sentry/nestjs": "^10.2.0",

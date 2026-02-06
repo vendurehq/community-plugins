@@ -12,8 +12,8 @@ import {
 import {
     SettlePaymentMutation,
     SettlePaymentMutationVariables,
-} from '@vendure/core/e2e/graphql/generated-e2e-admin-types';
-import { SETTLE_PAYMENT } from '@vendure/core/e2e/graphql/shared-definitions';
+} from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-admin-types';
+import { SETTLE_PAYMENT } from '../../../e2e-common/vendure-e2e-utils/graphql/shared-definitions';
 import {
     createTestEnvironment,
     E2E_DEFAULT_CHANNEL_TOKEN,
@@ -27,7 +27,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, v
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
-import { UPDATE_PRODUCT_VARIANTS } from '../../core/e2e/graphql/shared-definitions';
+import { UPDATE_PRODUCT_VARIANTS } from '../../../e2e-common/vendure-e2e-utils/graphql/shared-definitions';
 import { MolliePlugin } from '../src/mollie';
 import { molliePaymentHandler } from '../src/mollie/mollie.handler';
 

@@ -1,4 +1,4 @@
-import { CHANNEL_FRAGMENT } from '@vendure/core/e2e/graphql/fragments';
+import { CHANNEL_FRAGMENT } from '../../../../e2e-common/vendure-e2e-utils/graphql/fragments';
 import gql from 'graphql-tag';
 
 export const PAYMENT_METHOD_FRAGMENT = gql`

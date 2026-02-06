@@ -1,0 +1,22 @@
+{
+    "name": "vendure-community-plugins",
+    "private": true,
+    "workspaces": [
+        "packages/*"
+    ],
+    "scripts": {
+        "build": "lerna run build",
+        "test": "lerna run test",
+        "e2e": "lerna run e2e",
+        "lint": "lerna run lint"
+    },
+    "devDependencies": {
+        "cross-env": "^7.0.3",
+        "lerna": "^9.0.0",
+        "rimraf": "^5.0.5",
+        "typescript": "5.8.2",
+        "vitest": "^3.0.0",
+        "unplugin-swc": "^1.5.0",
+        "@swc/core": "^1.7.0"
+    }
+}

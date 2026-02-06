@@ -16,11 +16,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
-import * as Codegen from '../../core/e2e/graphql/generated-e2e-admin-types';
+import * as Codegen from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-admin-types';
 import {
     SearchProductsShopQuery,
     SearchProductsShopQueryVariables,
-} from '../../core/e2e/graphql/generated-e2e-shop-types';
+} from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-shop-types';
 import {
     ASSIGN_PRODUCT_TO_CHANNEL,
     ASSIGN_PRODUCTVARIANT_TO_CHANNEL,
@@ -39,9 +39,9 @@ import {
     UPDATE_PRODUCT,
     UPDATE_PRODUCT_VARIANTS,
     UPDATE_TAX_RATE,
-} from '../../core/e2e/graphql/shared-definitions';
-import { SEARCH_PRODUCTS_SHOP } from '../../core/e2e/graphql/shop-definitions';
-import { awaitRunningJobs } from '../../core/e2e/utils/await-running-jobs';
+} from '../../../e2e-common/vendure-e2e-utils/graphql/shared-definitions';
+import { SEARCH_PRODUCTS_SHOP } from '../../../e2e-common/vendure-e2e-utils/graphql/shop-definitions';
+import { awaitRunningJobs } from '../../../e2e-common/vendure-e2e-utils/utils/await-running-jobs';
 import { ElasticsearchPlugin } from '../src/plugin';
 
 import {

@@ -1,0 +1,10 @@
+node_modules/
+lib/
+dist/
+package/
+*.js.map
+*.d.ts.map
+__data__/
+.idea/
+.vscode/
+*.log

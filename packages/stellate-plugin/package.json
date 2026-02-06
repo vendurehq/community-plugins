@@ -1,6 +1,6 @@
 {
-    "name": "@vendure/stellate-plugin",
-    "version": "3.5.3",
+    "name": "@vendure-community/stellate-plugin",
+    "version": "1.0.0",
     "license": "GPL-3.0-or-later",
     "main": "lib/index.js",
     "types": "lib/index.d.ts",
@@ -9,7 +9,8 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/vendurehq/vendure"
+        "url": "https://github.com/vendurehq/vendure-community-plugins",
+        "directory": "packages/stellate-plugin"
     },
     "scripts": {
         "watch": "tsc -p ./tsconfig.build.json --watch",
@@ -21,11 +22,16 @@
     "publishConfig": {
         "access": "public"
     },
+    "peerDependencies": {
+        "@vendure/core": ">=3.0.0",
+        "@vendure/common": ">=3.0.0"
+    },
     "dependencies": {
         "node-fetch": "^2.7.0"
     },
     "devDependencies": {
-        "@vendure/common": "3.5.3",
-        "@vendure/core": "3.5.3"
+        "@vendure/common": "^3.5.3",
+        "@vendure/core": "^3.5.3",
+        "@vendure/testing": "^3.5.3"
     }
 }
