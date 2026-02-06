@@ -12,12 +12,19 @@
         "lint": "lerna run lint"
     },
     "devDependencies": {
+        "@eslint/js": "^9.39.2",
+        "@swc/core": "^1.7.0",
+        "@typescript-eslint/eslint-plugin": "^8.54.0",
+        "@typescript-eslint/parser": "^8.54.0",
         "cross-env": "^7.0.3",
+        "eslint": "^9.39.2",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-import": "^2.32.0",
         "lerna": "^9.0.0",
         "rimraf": "^5.0.5",
         "typescript": "5.8.2",
-        "vitest": "^3.0.0",
+        "typescript-eslint": "^8.54.0",
         "unplugin-swc": "^1.5.0",
-        "@swc/core": "^1.7.0"
+        "vitest": "^3.0.0"
     }
 }

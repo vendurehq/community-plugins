@@ -1,13 +1,5 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { EntityHydrator, mergeConfig } from '@vendure/core';
-import {
-    CreateProductMutation,
-    CreateProductMutationVariables,
-    CreateProductVariantsMutation,
-    CreateProductVariantsMutationVariables,
-    TestCreateStockLocationDocument,
-} from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-admin-types';
-import { CREATE_PRODUCT, CREATE_PRODUCT_VARIANTS } from '../../../e2e-common/vendure-e2e-utils/graphql/shared-definitions';
 import { createTestEnvironment, E2E_DEFAULT_CHANNEL_TOKEN } from '@vendure/testing';
 import gql from 'graphql-tag';
 import nock from 'nock';
@@ -18,6 +10,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
+import {
+    CreateProductMutation,
+    CreateProductMutationVariables,
+    CreateProductVariantsMutation,
+    CreateProductVariantsMutationVariables,
+    TestCreateStockLocationDocument,
+} from '../../../e2e-common/vendure-e2e-utils/graphql/generated-e2e-admin-types';
+import { CREATE_PRODUCT, CREATE_PRODUCT_VARIANTS } from '../../../e2e-common/vendure-e2e-utils/graphql/shared-definitions';
 import { StripePlugin } from '../src/stripe';
 import { stripePaymentMethodHandler } from '../src/stripe/stripe.handler';
 

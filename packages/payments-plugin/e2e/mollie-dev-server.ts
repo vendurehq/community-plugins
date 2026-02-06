@@ -24,7 +24,7 @@ import { CREATE_MOLLIE_PAYMENT_INTENT, setShipping } from './payment-helpers';
  */
 /* eslint-disable @typescript-eslint/no-floating-promises */
 async function runMollieDevServer() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     require('dotenv').config();
 
     registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__data__')));

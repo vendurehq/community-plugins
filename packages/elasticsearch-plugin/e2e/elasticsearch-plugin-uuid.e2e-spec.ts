@@ -16,7 +16,7 @@ import { ElasticsearchPlugin } from '../src/plugin';
 
 import { GetCollectionListQuery } from './graphql/generated-e2e-elasticsearch-plugin-types';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const { elasticsearchHost, elasticsearchPort } = require('./constants');
 
 // https://github.com/vendurehq/vendure/issues/494

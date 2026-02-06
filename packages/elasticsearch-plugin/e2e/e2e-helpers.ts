@@ -19,7 +19,7 @@ import {
     SearchProductsAdminQueryVariables,
 } from './graphql/generated-e2e-elasticsearch-plugin-types';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const { elasticsearchHost, elasticsearchPort } = require('./constants');
 
 export function doAdminSearchQuery(client: SimpleGraphQLClient, input: SearchInput) {

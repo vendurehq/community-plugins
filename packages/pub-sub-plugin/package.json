@@ -15,7 +15,7 @@
     "scripts": {
         "watch": "tsc -p ./tsconfig.build.json --watch",
         "build": "rimraf lib && tsc -p ./tsconfig.build.json",
-        "lint": "eslint --fix .",
+        "lint": "eslint .",
         "test": "vitest --run"
     },
     "homepage": "https://www.vendure.io",

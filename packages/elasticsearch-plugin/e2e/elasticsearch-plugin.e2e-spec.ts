@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion, no-console */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { CurrencyCode, SortOrder } from '@vendure/common/lib/generated-types';
 import { pick } from '@vendure/common/lib/pick';
 import {
@@ -69,7 +69,7 @@ import {
     JobState,
 } from './graphql/generated-e2e-elasticsearch-plugin-types';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+ 
 const { elasticsearchHost, elasticsearchPort } = require('./constants');
 
 interface SearchProductShopVariables extends SearchProductsShopQueryVariables {

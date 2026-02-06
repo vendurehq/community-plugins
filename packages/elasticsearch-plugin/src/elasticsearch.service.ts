@@ -62,6 +62,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
     }
 
     async checkConnection(): Promise<void> {
+        // eslint-disable-next-line no-async-promise-executor
         await new Promise<void>(async (resolve, reject) => {
             const { connectionAttempts, connectionAttemptInterval } = this.options;
             let attempts = 0;
@@ -157,7 +158,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                     });
                     const tempIndexMappings = tempIndexMappingsResult.body[tempIndex].mappings;
                     if (!equal(tempIndexMappings, existingIndexMappings))
-                        // eslint-disable-next-line max-len
+                         
                         Logger.warn(
                             `Index "${index}" mapping differs from index mapping in vendure config! Consider re-indexing the data.`,
                             loggerCtx,
@@ -508,7 +509,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
      */
     async reindex(ctx: RequestContext): Promise<Job> {
         const job = await this.elasticsearchIndexService.reindex(ctx);
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+         
         return job;
     }
 
