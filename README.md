@@ -121,11 +121,11 @@ git push && git push --tags
 
 Go to **Actions → Publish to npm → Run workflow** and select:
 
-| Input       | Description                                                                    |
-|-------------|--------------------------------------------------------------------------------|
-| **package** | Which package to publish, or `all` to publish every package with a new version |
-| **dist-tag** | `latest` for stable releases, `next` or `dev` for pre-releases               |
-| **dry-run** | Check what would be published without actually publishing                      |
+| Input        | Description                                                                    |
+|--------------|--------------------------------------------------------------------------------|
+| **package**  | Which package to publish, or `all` to publish every package with a new version |
+| **dist-tag** | `latest` for stable releases, `next` or `dev` for pre-releases                 |
+| **dry-run**  | Check what would be published without actually publishing                      |
 
 - **Single package**: Uses `npm publish` directly for the selected package.
 - **All + latest**: Uses `lerna publish from-package` which compares local versions to the npm
