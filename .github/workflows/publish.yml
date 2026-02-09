@@ -58,10 +58,8 @@ jobs:
                   fi
                   export TAG DATE
                   npx lerna exec $SCOPE -- \
-                    'CURRENT=$(node -p "require(\"./package.json\").version.replace(/-.*/, \"\")") && \
-                     IFS="." read -r MAJOR MINOR PATCH <<< "$CURRENT" && \
-                     PATCH=$((PATCH + 1)) && \
-                     npm version "${MAJOR}.${MINOR}.${PATCH}-${TAG}.${DATE}" --no-git-tag-version'
+                    'NEW=$(node -p "const v=require(\"./package.json\").version.replace(/-.*/,\"\").split(\".\");v[2]++;v.join(\".\")") && \
+                     npm version "${NEW}-${TAG}.${DATE}" --no-git-tag-version'
 
             # Publish: single package or pre-release (all packages)
             - name: Publish package(s)
