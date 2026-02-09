@@ -1,36 +1,74 @@
-name: Publish
+name: Publish to npm
 
 on:
     workflow_dispatch:
         inputs:
+            package:
+                description: 'Package to publish'
+                required: true
+                type: choice
+                options:
+                    - all
+                    - elasticsearch-plugin
+                    - payments-plugin
+                    - sentry-plugin
+                    - stellate-plugin
+                    - pub-sub-plugin
+            dist-tag:
+                description: 'npm dist-tag'
+                required: true
+                type: choice
+                options:
+                    - latest
+                    - next
+                    - dev
+                default: 'latest'
             dry-run:
                 description: 'Dry run (no actual publish)'
                 required: false
-                default: 'false'
+                type: boolean
+                default: false
 
 jobs:
     publish:
         runs-on: ubuntu-latest
         permissions:
-            contents: write
+            contents: read
             id-token: write
         steps:
             - uses: actions/checkout@v4
-              with:
-                  fetch-depth: 0
             - uses: actions/setup-node@v4
               with:
                   node-version: 20
                   registry-url: 'https://registry.npmjs.org'
             - run: npm ci
             - run: npm run build
-            - name: Publish packages
+
+            - name: Publish selected package
+              if: inputs.package != 'all'
               run: |
+                  ARGS="--access public --tag ${{ inputs.dist-tag }}"
                   if [ "${{ inputs.dry-run }}" = "true" ]; then
-                    npx lerna publish --conventional-commits --yes --no-push --dry-run
-                  else
-                    npx lerna publish --conventional-commits --yes --no-push
+                    ARGS="$ARGS --dry-run"
                   fi
+                  npx lerna exec --scope "@vendure-community/${{ inputs.package }}" -- npm publish $ARGS
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Publish all changed packages
+              if: inputs.package == 'all'
+              run: |
+                  ARGS="--yes"
+                  if [ "${{ inputs.dist-tag }}" != "latest" ]; then
+                    ARGS="$ARGS --dist-tag ${{ inputs.dist-tag }}"
+                  fi
+                  if [ "${{ inputs.dry-run }}" = "true" ]; then
+                    ARGS="$ARGS --no-git-tag-version --no-push"
+                    echo "=== DRY RUN ==="
+                    npx lerna changed || echo "No changed packages found"
+                    echo "Would publish with: lerna publish from-package $ARGS"
+                    exit 0
+                  fi
+                  npx lerna publish from-package $ARGS
+              env:
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

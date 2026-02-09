@@ -4,10 +4,9 @@
     "npmClient": "npm",
     "command": {
         "version": {
-            "push": false
-        },
-        "publish": {
-            "conventionalCommits": true
+            "push": false,
+            "conventionalCommits": true,
+            "message": "chore: version packages"
         }
     }
 }

@@ -75,6 +75,82 @@ npm run e2e
 cd packages/elasticsearch-plugin && npm run e2e
 ```
 
+## Releasing
+
+This repo uses [conventional commits](https://www.conventionalcommits.org/) and
+[lerna](https://lerna.js.org/) with independent versioning — each package has its own version and
+changelog.
+
+### Step-by-step release process
+
+#### 1. Write conventional commit messages
+
+Use the conventional commit format for all changes so that version bumps and changelogs are
+generated automatically:
+
+- `fix: ...` — patch release (1.0.0 → 1.0.1)
+- `feat: ...` — minor release (1.0.0 → 1.1.0)
+- `feat!: ...` or `BREAKING CHANGE:` in the footer — major release (1.0.0 → 2.0.0)
+
+#### 2. Version the packages
+
+When you're ready to release, run from the repo root:
+
+```bash
+npx lerna version --conventional-commits
+```
+
+This will:
+
+- Detect which packages have changed since their last release
+- Determine the version bump for each based on commit types
+- Update each package's `package.json` version
+- Generate/update each package's `CHANGELOG.md`
+- Create a single commit and per-package git tags (e.g. `@vendure-community/sentry-plugin@1.1.0`)
+
+> **Note:** The commit and tags are created locally — `push` is disabled in `lerna.json` so you
+> have a chance to review before pushing.
+
+#### 3. Push to remote
+
+```bash
+git push && git push --tags
+```
+
+#### 4. Publish to npm
+
+Go to **Actions → Publish to npm → Run workflow** and select:
+
+| Input       | Description                                                                    |
+|-------------|--------------------------------------------------------------------------------|
+| **package** | Which package to publish, or `all` to publish every package with a new version |
+| **dist-tag** | `latest` for stable releases, `next` or `dev` for pre-releases               |
+| **dry-run** | Check what would be published without actually publishing                      |
+
+- **Single package**: Uses `npm publish` directly for the selected package.
+- **All**: Uses `lerna publish from-package` which compares local versions to the npm registry and
+  only publishes packages with unpublished versions.
+
+### Pre-releases
+
+To publish a pre-release (e.g. for testing):
+
+```bash
+# Bump to a pre-release version
+npx lerna version prerelease --preid next --conventional-commits
+
+# Push, then trigger the workflow with dist-tag "next"
+git push && git push --tags
+```
+
+This creates versions like `1.1.0-next.0` and publishes them under the `next` dist-tag, so
+`npm install @vendure-community/some-plugin` still gets the latest stable version.
+
+### Requirements
+
+- An `NPM_TOKEN` secret must be configured in the repository settings with publish access to the
+  `@vendure-community` npm org.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE.md](LICENSE.md).
