@@ -128,23 +128,18 @@ Go to **Actions → Publish to npm → Run workflow** and select:
 | **dry-run** | Check what would be published without actually publishing                      |
 
 - **Single package**: Uses `npm publish` directly for the selected package.
-- **All**: Uses `lerna publish from-package` which compares local versions to the npm registry and
-  only publishes packages with unpublished versions.
+- **All + latest**: Uses `lerna publish from-package` which compares local versions to the npm
+  registry and only publishes packages with unpublished versions.
+- **All + next/dev**: Publishes all packages with auto-bumped pre-release versions.
 
 ### Pre-releases
 
-To publish a pre-release (e.g. for testing):
+Pre-release versions are handled entirely by the workflow — no local versioning needed. Just trigger
+the workflow with dist-tag `next` or `dev` and it will automatically bump each selected package to a
+timestamped pre-release version (e.g. `1.0.1-dev.202602091234`) and publish it under that dist-tag.
 
-```bash
-# Bump to a pre-release version
-npx lerna version prerelease --preid next --conventional-commits
-
-# Push, then trigger the workflow with dist-tag "next"
-git push && git push --tags
-```
-
-This creates versions like `1.1.0-next.0` and publishes them under the `next` dist-tag, so
-`npm install @vendure-community/some-plugin` still gets the latest stable version.
+This means `npm install @vendure-community/some-plugin` always gets the latest stable version, while
+`npm install @vendure-community/some-plugin@dev` gets the pre-release.
 
 ### Requirements
 

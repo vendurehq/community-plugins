@@ -44,29 +44,52 @@ jobs:
             - run: npm ci
             - run: npm run build
 
-            - name: Publish selected package
-              if: inputs.package != 'all'
+            # For pre-releases: auto-bump to timestamped pre-release versions in CI.
+            # These version changes are ephemeral — they are NOT committed back to the repo.
+            - name: Bump pre-release versions
+              if: inputs.dist-tag != 'latest'
               run: |
+                  DATE=$(date +'%Y%m%d%H%M')
+                  TAG="${{ inputs.dist-tag }}"
+                  if [ "${{ inputs.package }}" = "all" ]; then
+                    SCOPE="--no-private"
+                  else
+                    SCOPE="--scope @vendure-community/${{ inputs.package }}"
+                  fi
+                  export TAG DATE
+                  npx lerna exec $SCOPE -- \
+                    'CURRENT=$(node -p "require(\"./package.json\").version.replace(/-.*/, \"\")") && \
+                     IFS="." read -r MAJOR MINOR PATCH <<< "$CURRENT" && \
+                     PATCH=$((PATCH + 1)) && \
+                     npm version "${MAJOR}.${MINOR}.${PATCH}-${TAG}.${DATE}" --no-git-tag-version'
+
+            # Publish: single package or pre-release (all packages)
+            - name: Publish package(s)
+              if: inputs.package != 'all' || inputs.dist-tag != 'latest'
+              run: |
+                  if [ "${{ inputs.package }}" = "all" ]; then
+                    SCOPE="--no-private"
+                  else
+                    SCOPE="--scope @vendure-community/${{ inputs.package }}"
+                  fi
                   ARGS="--access public --tag ${{ inputs.dist-tag }}"
                   if [ "${{ inputs.dry-run }}" = "true" ]; then
                     ARGS="$ARGS --dry-run"
                   fi
-                  npx lerna exec --scope "@vendure-community/${{ inputs.package }}" -- npm publish $ARGS
+                  npx lerna exec $SCOPE -- npm publish $ARGS
               env:
                   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-            - name: Publish all changed packages
-              if: inputs.package == 'all'
+            # Publish: all packages, stable release.
+            # Uses lerna publish from-package which compares local versions to the npm
+            # registry and only publishes packages with unpublished versions.
+            - name: Publish all changed packages (stable)
+              if: inputs.package == 'all' && inputs.dist-tag == 'latest'
               run: |
                   ARGS="--yes"
-                  if [ "${{ inputs.dist-tag }}" != "latest" ]; then
-                    ARGS="$ARGS --dist-tag ${{ inputs.dist-tag }}"
-                  fi
                   if [ "${{ inputs.dry-run }}" = "true" ]; then
-                    ARGS="$ARGS --no-git-tag-version --no-push"
                     echo "=== DRY RUN ==="
                     npx lerna changed || echo "No changed packages found"
-                    echo "Would publish with: lerna publish from-package $ARGS"
                     exit 0
                   fi
                   npx lerna publish from-package $ARGS
