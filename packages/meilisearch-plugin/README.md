@@ -1,0 +1,421 @@
+# @vendure-community/meilisearch-plugin
+
+A Vendure plugin that replaces the default search with [Meilisearch](https://www.meilisearch.com/) — a fast, typo-tolerant search engine with optional AI-powered hybrid search (semantic + full-text).
+
+## Features
+
+- Full-text search with typo tolerance, synonyms, and stop words
+- AI-powered hybrid search (semantic + keyword) via OpenAI, HuggingFace, Ollama, or any REST embedder
+- Faceted search, collection filtering, price range filtering
+- Price range buckets for building filter UIs
+- Similar documents / product recommendations (when AI is enabled)
+- Configurable matching strategy, highlighting, cropping, and ranking
+- Custom product & variant field mappings
+- Buffered index updates
+- Health check endpoint
+
+## Requirements
+
+- Vendure `^3.0.0`
+- A running [Meilisearch](https://www.meilisearch.com/docs/learn/getting_started/cloud_quick_start) instance (v1.6+)
+
+## Installation
+
+```bash
+# npm
+npm install @vendure-community/meilisearch-plugin
+
+# yarn
+yarn add @vendure-community/meilisearch-plugin
+
+# pnpm
+pnpm add @vendure-community/meilisearch-plugin
+```
+
+## Quick Start
+
+### Minimal Setup (Full-Text Search Only)
+
+```ts
+import { MeilisearchPlugin } from '@vendure-community/meilisearch-plugin';
+
+export const config: VendureConfig = {
+  plugins: [
+    MeilisearchPlugin.init({
+      host: 'http://localhost:7700',
+      apiKey: 'your-master-key',
+    }),
+  ],
+};
+```
+
+### With AI Hybrid Search
+
+```ts
+MeilisearchPlugin.init({
+  host: 'http://localhost:7700',
+  apiKey: 'your-master-key',
+  ai: {
+    embedders: {
+      default: {
+        source: 'openAi',
+        model: 'text-embedding-3-small',
+        apiKey: process.env.OPENAI_API_KEY,
+        documentTemplate:
+          "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
+      },
+    },
+    semanticRatio: 0.5, // 0 = keyword only, 1 = semantic only
+  },
+})
+```
+
+After startup, run the `reindex` mutation from the Admin API to populate the search index.
+
+## Full Configuration Reference
+
+```ts
+MeilisearchPlugin.init({
+
+  // ─── Connection ────────────────────────────────────────────
+  host: 'http://localhost:7700',          // Meilisearch server URL
+  apiKey: 'your-master-key',             // Master/admin API key
+  connectionAttempts: 10,                 // Retry attempts on startup
+  connectionAttemptInterval: 5000,        // ms between retries
+
+  // ─── Indexing ──────────────────────────────────────────────
+  indexPrefix: 'vendure-',                // Index name prefix (useful for multi-project)
+  reindexProductsChunkSize: 2500,         // Products loaded per DB query during reindex
+  reindexBatchSize: 1000,                 // Documents sent to Meilisearch per batch
+  bufferUpdates: false,                   // Buffer updates instead of immediate indexing
+
+  // ─── Search Query Config ───────────────────────────────────
+  searchConfig: {
+    // Matching
+    matchingStrategy: 'frequency',        // 'last' | 'all' | 'frequency'
+    attributesToSearchOn: ['productName', 'description', 'sku'],
+    rankingScoreThreshold: 0.15,          // 0.0-1.0, filter out weak results
+
+    // Highlighting
+    attributesToHighlight: ['productName', 'description'],
+    highlightPreTag: '<mark>',
+    highlightPostTag: '</mark>',
+
+    // Cropping
+    attributesToCrop: ['description'],
+    cropLength: 30,
+    cropMarker: '...',
+
+    // Debug / scoring
+    showRankingScore: true,
+    showRankingScoreDetails: false,
+    showMatchesPosition: false,
+
+    // Response
+    attributesToRetrieve: ['*'],          // Fields to return
+
+    // Internal limits
+    facetValueMaxSize: 50,
+    collectionMaxSize: 50,
+    totalItemsMaxSize: 10000,
+    priceRangeBucketInterval: 1000,       // Price bucket width (in currency subunits)
+
+    // Hooks
+    mapQuery: (query, input, searchConfig, channelId, enabledOnly, ctx) => {
+      // Modify the raw Meilisearch query before it's sent
+      return query;
+    },
+    mapSort: (sort, input) => sort,
+  },
+
+  // ─── Typo Tolerance ────────────────────────────────────────
+  typoTolerance: {
+    enabled: true,
+    minWordSizeForOneTypo: 4,             // Default: 5
+    minWordSizeForTwoTypos: 8,            // Default: 9
+    disableOnWords: ['iPhone', 'Samsung'],
+    disableOnAttributes: ['sku'],
+  },
+
+  // ─── Synonyms ──────────────────────────────────────────────
+  synonyms: {
+    phone: ['mobile', 'smartphone', 'cellphone'],
+    laptop: ['notebook'],
+    tv: ['television', 'monitor'],
+  },
+
+  // ─── Stop Words ────────────────────────────────────────────
+  stopWords: ['the', 'a', 'an', 'is', 'for', 'and', 'of'],
+
+  // ─── Ranking Rules ─────────────────────────────────────────
+  rankingRules: [
+    'words', 'typo', 'proximity', 'attribute',
+    'sort', 'exactness', 'productInStock:desc',
+  ],
+
+  // ─── AI / Hybrid Search (optional) ─────────────────────────
+  ai: {
+    embedders: {
+      default: {
+        source: 'openAi',                // 'openAi' | 'huggingFace' | 'ollama' | 'rest' | 'userProvided'
+        model: 'text-embedding-3-small',
+        apiKey: process.env.OPENAI_API_KEY,
+        documentTemplate: "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
+        documentTemplateMaxBytes: 400,
+        // For 'rest' source:
+        // url: 'https://api.example.com/embed',
+        // request: { ... },
+        // response: { ... },
+        // headers: { ... },
+        // For 'userProvided' source:
+        // dimensions: 1536,
+      },
+    },
+    defaultEmbedder: 'default',           // Which embedder to use by default
+    semanticRatio: 0.5,                   // 0.0 = keyword only, 1.0 = semantic only
+  },
+
+  // ─── Custom Mappings ───────────────────────────────────────
+  customProductMappings: {
+    reviewRating: {
+      graphQlType: 'Float',
+      valueFn: (product, variants, languageCode, injector, ctx) => {
+        return product.customFields?.reviewRating ?? 0;
+      },
+    },
+  },
+  customProductVariantMappings: {
+    warehouse: {
+      graphQlType: 'String',
+      valueFn: (variant, languageCode, injector, ctx) => {
+        return variant.customFields?.warehouse ?? '';
+      },
+    },
+  },
+
+  // ─── Hydration (extra DB relations for custom mappings) ────
+  hydrateProductRelations: ['customFields'],
+  hydrateProductVariantRelations: ['customFields'],
+
+  // ─── Extend GraphQL Input ──────────────────────────────────
+  extendSearchInputType: {
+    reviewRating: 'Float',
+  },
+  extendSearchSortType: ['reviewRating'],
+})
+```
+
+## Matching Strategy
+
+Controls how Meilisearch matches multi-word queries:
+
+| Strategy | Behavior | Use When |
+|---|---|---|
+| `'last'` (default) | Returns results even if not all terms match. Drops least important terms progressively. | You want maximum results / fuzzy matching |
+| `'frequency'` | Prioritizes rare/meaningful terms, drops common ones. | Balanced — good default for e-commerce |
+| `'all'` | Only returns documents matching **every** query term. | You want strict/exact matching |
+
+## Typo Tolerance
+
+Meilisearch has built-in typo tolerance. The `typoTolerance` config lets you tune it:
+
+```ts
+typoTolerance: {
+  enabled: true,
+  minWordSizeForOneTypo: 4,   // "shrt" matches "shirt" (4+ chars = 1 typo allowed)
+  minWordSizeForTwoTypos: 8,  // "smartphne" matches "smartphone" (8+ chars = 2 typos)
+  disableOnWords: ['iPhone'],  // Brand names must be exact
+  disableOnAttributes: ['sku'], // SKU must be exact
+}
+```
+
+Lower values = more fuzzy. Higher values = more strict.
+
+| Strictness | `minWordSizeForOneTypo` | `minWordSizeForTwoTypos` |
+|---|---|---|
+| Loose | 3 | 6 |
+| Balanced | 4 | 8 |
+| Default | 5 | 9 |
+| Strict | 6 | 10 |
+
+## AI Hybrid Search
+
+When the `ai` option is configured, searches automatically combine keyword matching with semantic similarity. The Meilisearch server handles all embedding generation — the plugin just configures the embedder and sends plain documents.
+
+### Supported Embedder Sources
+
+| Source | Description |
+|---|---|
+| `'openAi'` | OpenAI API (recommended, works best for most use cases) |
+| `'huggingFace'` | HuggingFace models running on the Meilisearch server |
+| `'ollama'` | Self-hosted Ollama models |
+| `'rest'` | Any REST API embedder (Mistral, Cloudflare, Voyage, etc.) |
+| `'userProvided'` | You compute and supply your own embeddings |
+
+### Semantic Ratio
+
+Controls the balance between keyword and semantic results:
+
+```
+0.0  ──────────── 0.5 ──────────── 1.0
+pure keyword     balanced      pure semantic
+```
+
+### Embeddings & Reindex
+
+- Embeddings are generated by the **Meilisearch server**, not this plugin.
+- A full reindex creates a fresh index — all embeddings are regenerated (this incurs API costs with external providers like OpenAI).
+- Incremental updates (product edits) only re-embed affected documents.
+- Removing the `ai` config and restarting switches to keyword-only search immediately. Reindex to clean up old embeddings from the server.
+
+### Similar Documents
+
+When AI is enabled, you can query for similar products via GraphQL:
+
+```graphql
+query {
+  similarDocuments(input: {
+    id: "1_42_en"
+    limit: 10
+  }) {
+    items {
+      productName
+      productId
+    }
+    totalItems
+  }
+}
+```
+
+## Price Range Buckets
+
+The `priceRangeBucketInterval` controls how search results are grouped into price bands in the response. This data powers price filter UIs:
+
+```ts
+searchConfig: {
+  priceRangeBucketInterval: 2000, // Each bucket spans $20 (2000 cents)
+}
+```
+
+Response includes:
+```json
+{
+  "prices": {
+    "range": { "min": 500, "max": 15000 },
+    "buckets": [
+      { "to": 2000, "count": 23 },
+      { "to": 4000, "count": 45 },
+      { "to": 6000, "count": 12 }
+    ]
+  }
+}
+```
+
+This is **separate** from the `priceRange` input filter, which lets users filter results by price.
+
+## Multi-Project Setup
+
+If multiple Vendure projects share the same Meilisearch instance, use different `indexPrefix` values:
+
+```ts
+// Project A
+MeilisearchPlugin.init({ indexPrefix: 'shop-a-', ... })
+
+// Project B
+MeilisearchPlugin.init({ indexPrefix: 'shop-b-', ... })
+```
+
+This creates separate indexes (`shop-a-variants`, `shop-b-variants`) so reindexing one doesn't affect the other.
+
+## Admin API
+
+The plugin extends the Admin API with:
+
+```graphql
+# Rebuild the entire search index
+mutation { reindex { ... } }
+
+# Run buffered updates (when bufferUpdates: true)
+mutation { runPendingSearchIndexUpdates { ... } }
+```
+
+## Custom Mappings
+
+Add extra data to the search index:
+
+```ts
+customProductMappings: {
+  brand: {
+    graphQlType: 'String',
+    public: true, // Exposed in GraphQL (default: true)
+    valueFn: (product, variants, languageCode, injector, ctx) => {
+      return product.customFields?.brand ?? '';
+    },
+  },
+},
+```
+
+Access in GraphQL:
+
+```graphql
+query {
+  search(input: { term: "shoes" }) {
+    items {
+      customProductMappings {
+        brand
+      }
+    }
+  }
+}
+```
+
+## Hooks
+
+### `mapQuery`
+
+Intercept and modify the raw Meilisearch query before it's sent:
+
+```ts
+searchConfig: {
+  mapQuery: (query, input, searchConfig, channelId, enabledOnly, ctx) => {
+    // Example: boost in-stock products for logged-in users
+    if (ctx.activeUser) {
+      query.sort = ['inStock:desc', ...(query.sort || [])];
+    }
+    return query;
+  },
+}
+```
+
+### `mapSort`
+
+Modify the sort parameters:
+
+```ts
+searchConfig: {
+  mapSort: (sort, input) => {
+    if (input.sort?.myCustomField) {
+      sort.push(`variant-myCustomField:${input.sort.myCustomField === 'ASC' ? 'asc' : 'desc'}`);
+    }
+    return sort;
+  },
+}
+```
+
+## Exported Types
+
+```ts
+import {
+  MeilisearchPlugin,
+  MeilisearchOptions,
+  SearchConfig,
+  MatchingStrategy,
+  EmbedderConfig,
+  AiSearchConfig,
+  TypoToleranceConfig,
+} from '@vendure-community/meilisearch-plugin';
+```
+
+## License
+
+GPL-3.0-or-later

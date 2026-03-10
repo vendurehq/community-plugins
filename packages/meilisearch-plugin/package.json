@@ -1,0 +1,53 @@
+{
+    "name": "@vendure-community/meilisearch-plugin",
+    "version": "1.0.0",
+    "description": "Vendure plugin for Meilisearch-powered product search with AI hybrid search support",
+    "license": "GPL-3.0-or-later",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist/**/*"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/vendurehq/community-plugins",
+        "directory": "packages/meilisearch-plugin"
+    },
+    "scripts": {
+        "watch": "tsc -p ./tsconfig.build.json --watch",
+        "build": "rimraf dist && tsc -p ./tsconfig.build.json",
+        "lint": "eslint ."
+    },
+    "keywords": [
+        "vendure",
+        "vendure-plugin",
+        "meilisearch",
+        "search",
+        "full-text-search",
+        "ai-search"
+    ],
+    "homepage": "https://www.vendure.io",
+    "funding": "https://github.com/sponsors/michaelbromley",
+    "publishConfig": {
+        "access": "public"
+    },
+    "peerDependencies": {
+        "@vendure/core": ">=3.0.0",
+        "@vendure/common": ">=3.0.0"
+    },
+    "devDependencies": {
+        "@vendure/common": "^3.5.3",
+        "@vendure/core": "^3.5.3",
+        "@vendure/testing": "^3.5.3"
+    },
+    "dependencies": {
+        "meilisearch": "^0.55.0",
+        "deepmerge": "^4.3.1"
+    }
+}
