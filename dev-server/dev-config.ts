@@ -22,6 +22,7 @@ import { DataSourceOptions } from 'typeorm';
 // import { SentryPlugin } from '../packages/sentry-plugin/src/sentry-plugin';
 // import { StellatePlugin } from '../packages/stellate-plugin/src/stellate-plugin';
 // import { PubSubPlugin } from '../packages/pub-sub-plugin/src/plugin';
+// import { MeilisearchPlugin } from '../packages/meilisearch-plugin/src/plugin';
 
 /**
  * Dev server config for testing community plugins during development.
@@ -70,6 +71,46 @@ export const devConfig: VendureConfig = {
             assetUploadDir: path.join(__dirname, 'assets'),
         }),
         DefaultSearchPlugin.init({ bufferUpdates: false, indexStockStatus: false }),
+        // To use MeilisearchPlugin, comment out DefaultSearchPlugin above and uncomment below:
+        // MeilisearchPlugin.init({
+        //     host: process.env.MEILISEARCH_HOST || 'http://localhost:7700',
+        //     apiKey: process.env.MEILISEARCH_API_KEY || '',
+        //     ai: {
+        //         embedders: {
+        //             default: {
+        //                 source: 'openAi',
+        //                 model: 'text-embedding-3-small',
+        //                 apiKey: process.env.OPENAI_API_KEY,
+        //                 documentTemplate:
+        //                     "A product called '{{doc.productName}}' described as '{{doc.description}}' with SKU {{doc.sku}}",
+        //             },
+        //         },
+        //         defaultEmbedder: 'default',
+        //         semanticRatio: 0.5,
+        //     },
+        //     synonyms: {
+        //         phone: ['mobile', 'smartphone', 'cellphone'],
+        //         laptop: ['notebook', 'portable computer'],
+        //         tv: ['television', 'monitor', 'screen'],
+        //         shoe: ['sneaker', 'boot', 'footwear'],
+        //     },
+        //     stopWords: ['the', 'a', 'an', 'is', 'for', 'and', 'of', 'to', 'in'],
+        //     typoTolerance: {
+        //         enabled: true,
+        //         minWordSizeForOneTypo: 4,
+        //         minWordSizeForTwoTypos: 8,
+        //         disableOnAttributes: ['sku'],
+        //     },
+        //     searchConfig: {
+        //         matchingStrategy: 'frequency',
+        //         attributesToHighlight: ['productName', 'description'],
+        //         highlightPreTag: '<mark>',
+        //         highlightPostTag: '</mark>',
+        //         attributesToCrop: ['description'],
+        //         cropLength: 30,
+        //         showRankingScore: true,
+        //     },
+        // }),
         DefaultJobQueuePlugin.init({}),
 
         // --- Community plugins ---
@@ -100,9 +141,9 @@ function getDbConfig(): DataSourceOptions {
                 type: 'postgres',
                 host: process.env.DB_HOST || 'localhost',
                 port: Number(process.env.DB_PORT) || 5432,
-                username: process.env.DB_USERNAME || 'vendure',
-                password: process.env.DB_PASSWORD || 'password',
-                database: process.env.DB_NAME || 'vendure-dev',
+                username: process.env.DB_USERNAME || 'postgres',
+                password: process.env.DB_PASSWORD || 'postgres',
+                database: process.env.DB_NAME || 'community',
             };
         case 'mysql':
         case 'mariadb':
