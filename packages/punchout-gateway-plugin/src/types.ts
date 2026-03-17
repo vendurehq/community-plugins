@@ -17,16 +17,6 @@ export interface PunchOutGatewayPluginOptions {
      * @default 'nonZero'
      */
     shippingCostMode?: 'all' | 'nonZero' | 'none';
-    /**
-     * URL of your storefront's PunchOut landing page.
-     * When set, the `/punchcommerce/authenticate` endpoint redirects
-     * to this URL with `sID` and `uID` as query params.
-     *
-     * When not set, the endpoint returns JSON `{ sID, uID }` for testing.
-     *
-     * @example 'https://my-store.com/punchout'
-     */
-    storefrontUrl?: string;
 }
 
 /** Matches the GraphQL `input PunchOutAuthInput` defined in `PunchOutAuthenticationStrategy.defineInputType()`. */

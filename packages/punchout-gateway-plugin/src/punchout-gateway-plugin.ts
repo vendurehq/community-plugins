@@ -1,7 +1,6 @@
 import { LanguageCode, PluginCommonModule, RuntimeVendureConfig, VendurePlugin } from '@vendure/core';
 
 import { shopApiExtensions } from './api/api-extensions';
-import { PunchOutAuthenticateController } from './api/punchout-authenticate.controller';
 import { PunchOutGatewayResolver } from './api/punchout-gateway.resolver';
 import { PUNCHOUT_GATEWAY_PLUGIN_OPTIONS } from './constants';
 import { PunchOutActiveOrderStrategy } from './punchout-active-order-strategy';
@@ -16,7 +15,6 @@ const PunchOutOptionsProvider = {
 
 @VendurePlugin({
     imports: [PluginCommonModule],
-    controllers: [PunchOutAuthenticateController],
     providers: [PunchOutOptionsProvider, PunchOutGatewayService],
     shopApiExtensions: {
         schema: shopApiExtensions,
