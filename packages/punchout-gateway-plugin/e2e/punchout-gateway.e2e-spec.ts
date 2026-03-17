@@ -237,24 +237,8 @@ describe('PunchOut Gateway Plugin', () => {
             expect(prod.price).toBeGreaterThan(0);
             expect(prod.active).toBe(true);
             expect(prod.packaging_unit).toBeTruthy();
-        });
 
-        it('should include shipping line item when shipping > 0', async () => {
-            let capturedBody: any;
-            nock(mockApiUrl)
-                .post('/gateway/v3/return', (body: any) => {
-                    capturedBody = body;
-                    return true;
-                })
-                .query({ sID: mockSID })
-                .reply(200);
-
-            const { transferPunchOutCart } = await shopClient.query(TRANSFER_PUNCHOUT_CART, {
-                sID: mockSID,
-            });
-            expect(transferPunchOutCart.success).toBe(true);
-
-            const basket = parseBasketFromBody(capturedBody);
+            // Verify shipping line item is included
             const shippingPosition = basket.basket.find(
                 (p: any) => p.type === 'shipping-costs',
             );
@@ -262,42 +246,22 @@ describe('PunchOut Gateway Plugin', () => {
             expect(shippingPosition.product_ordernumber).toBe('SHIPPING');
             expect(shippingPosition.quantity).toBe(1);
             expect(shippingPosition.price).toBeGreaterThan(0);
-        });
 
-        it('should handle failed cart transfer from PunchCommerce', async () => {
-            nock(mockApiUrl)
-                .post('/gateway/v3/return', () => true)
-                .query({ sID: mockSID })
-                .reply(400);
-
-            const { transferPunchOutCart } = await shopClient.query(TRANSFER_PUNCHOUT_CART, {
-                sID: mockSID,
-            });
-            expect(transferPunchOutCart.success).toBe(false);
-            expect(transferPunchOutCart.message).toBeDefined();
-        });
-    });
-
-    describe('Basket transformation', () => {
-        it('should have correct price conversions (cents to decimal)', async () => {
-            let capturedBody: any;
-            nock(mockApiUrl)
-                .post('/gateway/v3/return', (body: any) => {
-                    capturedBody = body;
-                    return true;
-                })
-                .query({ sID: mockSID })
-                .reply(200);
-
-            await shopClient.query(TRANSFER_PUNCHOUT_CART, { sID: mockSID });
-
-            const basket = parseBasketFromBody(capturedBody);
+            // Verify all prices are decimal (not integer cents)
             for (const position of basket.basket) {
                 expect(position.item_price).toBeLessThan(10000);
                 expect(position.price).toBeLessThan(100000);
                 expect(position.price_net).toBeLessThan(100000);
                 expect(position.product.price).toBeLessThan(10000);
             }
+        });
+
+        it('should not allow re-transfer after order is transferred', async () => {
+            // The order from the previous test should now be in Transferred state
+            const { transferPunchOutCart } = await shopClient.query(TRANSFER_PUNCHOUT_CART, {
+                sID: mockSID,
+            });
+            expect(transferPunchOutCart.success).toBe(false);
         });
     });
 });

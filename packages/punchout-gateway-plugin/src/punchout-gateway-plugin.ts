@@ -2,11 +2,17 @@ import { LanguageCode, PluginCommonModule, RuntimeVendureConfig, VendurePlugin }
 
 import { shopApiExtensions } from './api/api-extensions';
 import { PunchOutGatewayResolver } from './api/punchout-gateway.resolver';
-import { PUNCHOUT_GATEWAY_PLUGIN_OPTIONS } from './constants';
+import { PUNCHOUT_GATEWAY_PLUGIN_OPTIONS, TRANSFERRED_ORDER_STATE } from './constants';
 import { PunchOutActiveOrderStrategy } from './punchout-active-order-strategy';
 import { PunchOutAuthenticationStrategy } from './punchout-authentication-strategy';
 import { PunchOutGatewayService } from './service/punchout-gateway.service';
 import { PunchOutGatewayPluginOptions } from './types';
+
+declare module '@vendure/core' {
+    interface CustomOrderStates {
+        Transferred: never;
+    }
+}
 
 const PunchOutOptionsProvider = {
     provide: PUNCHOUT_GATEWAY_PLUGIN_OPTIONS,
@@ -21,6 +27,24 @@ const PunchOutOptionsProvider = {
         resolvers: [PunchOutGatewayResolver],
     },
     configuration: (config: RuntimeVendureConfig) => {
+        config.orderOptions.process = [
+            ...(config.orderOptions.process ?? []),
+            {
+                transitions: {
+                    AddingItems: {
+                        to: [TRANSFERRED_ORDER_STATE],
+                    },
+                    [TRANSFERRED_ORDER_STATE]: {
+                        to: [],
+                    },
+                },
+                onTransitionEnd(fromState, toState, data) {
+                    if (toState === TRANSFERRED_ORDER_STATE) {
+                        data.order.active = false;
+                    }
+                },
+            },
+        ];
         config.authOptions.shopAuthenticationStrategy = [
             ...config.authOptions.shopAuthenticationStrategy,
             new PunchOutAuthenticationStrategy(),

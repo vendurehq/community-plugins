@@ -67,6 +67,7 @@ export class PunchOutActiveOrderStrategy implements ActiveOrderStrategy<PunchOut
         await this.connection.getRepository(ctx, Order).update(order.id, {
             customFields: { punchOutSessionId: input.sID },
         });
-        return order;
+        // Re-fetch to ensure customFields are populated on the returned entity
+        return this.connection.getRepository(ctx, Order).findOneOrFail({ where: { id: order.id } });
     }
 }

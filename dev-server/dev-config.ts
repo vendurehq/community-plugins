@@ -89,9 +89,7 @@ export const devConfig: VendureConfig = {
         //     includeErrorTestMutation: true,
         // }),
 
-        // PunchOutGatewayPlugin.init({
-        //     // apiUrl: 'https://www.punchcommerce.de',
-        // }),
+        // PunchOutGatewayPlugin.init({}),
     ],
 };
 
