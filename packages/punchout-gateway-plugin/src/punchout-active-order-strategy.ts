@@ -54,12 +54,18 @@ export class PunchOutActiveOrderStrategy implements ActiveOrderStrategy<PunchOut
             .where('order.customFields.punchOutSessionId = :sID', { sID: input.sID })
             .andWhere('order.active = :active', { active: true })
             .andWhere('channel.id = :channelId', { channelId: ctx.channelId });
-        // Verify ownership if user is authenticated
+
         if (ctx.activeUserId) {
             qb.andWhere('user.id = :userId', { userId: ctx.activeUserId });
         }
         const order = await qb.getOne();
-        return order ?? undefined;
+        if (order) {
+            return order;
+        }
+        // Create the order eagerly so that read-only queries (activeOrder)
+        // never fall through to the DefaultActiveOrderStrategy, which would
+        // return a stale order from a different PunchOut session.
+        return this.createActiveOrder(ctx, input);
     }
 
     async createActiveOrder(ctx: RequestContext, input: PunchOutActiveOrderInput): Promise<Order> {

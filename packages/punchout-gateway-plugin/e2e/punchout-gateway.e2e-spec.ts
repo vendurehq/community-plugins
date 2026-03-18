@@ -17,6 +17,7 @@ import {
 import {
     ADD_ITEM_TO_ORDER,
     AUTHENTICATE_PUNCHOUT,
+    GET_ACTIVE_ORDER,
     GET_ELIGIBLE_SHIPPING_METHODS,
     SET_SHIPPING_ADDRESS,
     SET_SHIPPING_METHOD,
@@ -355,6 +356,38 @@ describe('PunchOut Gateway Plugin', () => {
             const productB = basketB.basket.find((p: any) => p.type === 'product');
             expect(productB.product_ordernumber).toBe('DESK-01');
             expect(productB.quantity).toBe(3);
+        });
+
+        it('should not leak cart from session A when querying activeOrder with session B sID', async () => {
+            const sID_A = 'isolation-session-A';
+            const sID_B = 'isolation-session-B';
+
+            nock(mockApiUrl)
+                .get('/gateway/v3/session/validate')
+                .query({ sID: sID_A, uID: mockUID })
+                .reply(200);
+            await shopClient.query(AUTHENTICATE_PUNCHOUT, { sID: sID_A, uID: mockUID });
+
+            // Add items to session A
+            await shopClient.query(ADD_ITEM_TO_ORDER, {
+                productVariantId: 'T_1',
+                quantity: 5,
+                activeOrderInput: { punchout: { sID: sID_A } },
+            });
+
+            // Query activeOrder with session B — should get an empty cart, not session A's
+            const { activeOrder } = await shopClient.query(GET_ACTIVE_ORDER, {
+                activeOrderInput: { punchout: { sID: sID_B } },
+            });
+            expect(activeOrder).toBeDefined();
+            expect(activeOrder.lines).toHaveLength(0);
+            expect(activeOrder.totalQuantity).toBe(0);
+
+            // Session A should still have its items
+            const { activeOrder: orderA } = await shopClient.query(GET_ACTIVE_ORDER, {
+                activeOrderInput: { punchout: { sID: sID_A } },
+            });
+            expect(orderA.totalQuantity).toBe(5);
         });
     });
 

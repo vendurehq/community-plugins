@@ -91,7 +91,7 @@ const { authenticate } = await graphqlClient.mutate({
 
 ### 2. Session-Scoped Cart (activeOrderInput)
 
-All order mutations must include `activeOrderInput: { punchout: { sID } }` to scope the cart to the PunchOut session. This enables parallel sessions for the same customer.
+All order operations (queries and mutations) must include `activeOrderInput: { punchout: { sID } }` to scope the cart to the PunchOut session. This enables parallel sessions for the same customer.
 
 ```ts
 const sID = sessionStorage.getItem('punchoutSID');
@@ -117,7 +117,35 @@ await graphqlClient.mutate({
 });
 ```
 
-Pass `activeOrderInput` on **all** order operations: `addItemToOrder`, `adjustOrderLine`, `removeOrderLine`, `setOrderShippingAddress`, `setOrderShippingMethod`, `eligibleShippingMethods`, etc.
+Pass `activeOrderInput` on **all** order operations: `activeOrder`, `addItemToOrder`, `adjustOrderLine`, `removeOrderLine`, `setOrderShippingAddress`, `setOrderShippingMethod`, `eligibleShippingMethods`, etc.
+
+To display the cart, query `activeOrder` with the same input:
+
+```ts
+const sID = sessionStorage.getItem('punchoutSID');
+
+const { activeOrder } = await graphqlClient.query({
+    query: gql`
+        query PunchOutCart($activeOrderInput: ActiveOrderInput) {
+            activeOrder(activeOrderInput: $activeOrderInput) {
+                id
+                totalWithTax
+                totalQuantity
+                lines {
+                    id
+                    quantity
+                    unitPriceWithTax
+                    linePriceWithTax
+                    productVariant { name sku }
+                }
+            }
+        }
+    `,
+    variables: {
+        activeOrderInput: { punchout: { sID } },
+    },
+});
+```
 
 ### 3. Transfer Cart (replaces Checkout)
 
@@ -199,8 +227,16 @@ The actual purchase order (PO) comes later through a separate channel — either
 
 ## Parallel Sessions
 
-The plugin uses a custom `ActiveOrderStrategy` to scope orders by PunchOut session ID (`sID`). This means:
+The plugin uses a custom `ActiveOrderStrategy` to scope orders by PunchOut session ID (`sID`). At the API level:
 
 - Each PunchOut session gets its own empty cart
 - The same customer can have multiple concurrent PunchOut sessions
 - Carts are isolated — items added in one session don't appear in another
+
+### Storefront considerations
+
+Browser cookies are scoped per-domain, not per-tab. If your storefront stores the `sID` in a cookie, only one PunchOut session can be active at a time — starting a new session overwrites the cookie and the previous session's cart becomes inaccessible from the UI.
+
+To support truly parallel sessions, store the `sID` in `sessionStorage` (which is tab-scoped) and pass it explicitly to server actions. This way each browser tab/iframe maintains its own independent PunchOut session.
+
+When a new PunchOut session starts and replaces the previous `sID`, make sure to revalidate any cached cart data so the UI reflects the new (empty) cart instead of showing stale items from the previous session.

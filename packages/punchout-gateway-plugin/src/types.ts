@@ -19,6 +19,16 @@ export interface PunchOutGatewayPluginOptions {
     shippingCostMode?: 'all' | 'nonZero' | 'none';
 }
 
+declare module '@vendure/core/dist/entity/custom-entity-fields' {
+    interface CustomCustomerFields {
+        punchOutUid: string;
+    }
+
+    interface CustomOrderFields {
+        punchOutSessionId: string;
+    }
+}
+
 /** Matches the GraphQL `input PunchOutAuthInput` defined in `PunchOutAuthenticationStrategy.defineInputType()`. */
 export interface PunchOutAuthInput {
     sID: string;

@@ -92,3 +92,20 @@ export const SET_SHIPPING_METHOD = gql`
         }
     }
 `;
+
+export const GET_ACTIVE_ORDER = gql`
+    query GetActiveOrder($activeOrderInput: ActiveOrderInput) {
+        activeOrder(activeOrderInput: $activeOrderInput) {
+            id
+            code
+            totalQuantity
+            lines {
+                id
+                quantity
+                productVariant {
+                    sku
+                }
+            }
+        }
+    }
+`;
