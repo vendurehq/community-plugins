@@ -1,5 +1,6 @@
 import {
     ActiveOrderStrategy,
+    Customer,
     Injector,
     Order,
     OrderService,
@@ -10,10 +11,7 @@ import { DocumentNode } from 'graphql';
 import gql from 'graphql-tag';
 
 import { PUNCHOUT_STRATEGY_NAME } from './constants';
-
-export interface PunchOutActiveOrderInput {
-    sID: string;
-}
+import { PunchOutActiveOrderInput } from './types';
 
 /**
  * An ActiveOrderStrategy that scopes active orders by PunchOut session ID.
@@ -64,9 +62,15 @@ export class PunchOutActiveOrderStrategy implements ActiveOrderStrategy<PunchOut
         if (order) {
             return order;
         }
-        // Only create an order for authenticated users to prevent
-        // unauthenticated requests from spamming order creation.
         if (!ctx.activeUserId) {
+            return undefined;
+        }
+        // Only create orders for customers that have a punchOutUid,
+        // preventing non-PunchOut users from creating orphaned orders.
+        const customer = await this.connection.getRepository(ctx, Customer).findOne({
+            where: { user: { id: ctx.activeUserId } },
+        });
+        if (!customer?.customFields?.punchOutUid) {
             return undefined;
         }
         // Create the order eagerly so that read-only queries (activeOrder)
@@ -80,7 +84,7 @@ export class PunchOutActiveOrderStrategy implements ActiveOrderStrategy<PunchOut
         await this.connection.getRepository(ctx, Order).update(order.id, {
             customFields: { punchOutSessionId: input.sID },
         });
-        // Re-fetch to ensure customFields are populated on the returned entity
-        return this.connection.getRepository(ctx, Order).findOneOrFail({ where: { id: order.id } });
+        order.customFields.punchOutSessionId = input.sID;
+        return order;
     }
 }

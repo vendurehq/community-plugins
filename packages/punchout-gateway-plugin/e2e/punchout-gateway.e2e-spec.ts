@@ -13,6 +13,7 @@ import {
     mockApiUrl,
     mockSID,
     mockUID,
+    mockUID_B,
 } from './fixtures/punchcommerce-mock-data';
 import {
     ADD_ITEM_TO_ORDER,
@@ -86,6 +87,7 @@ async function setupPunchOutOrder(
 
 describe('PunchOut Gateway Plugin', () => {
     let shopClient: SimpleGraphQLClient;
+    let shopClientB: SimpleGraphQLClient;
     let adminClient: SimpleGraphQLClient;
     let server: TestServer;
     let started = false;
@@ -101,6 +103,7 @@ describe('PunchOut Gateway Plugin', () => {
         });
         const env = createTestEnvironment(devConfig);
         shopClient = env.shopClient;
+        shopClientB = new SimpleGraphQLClient(devConfig, `http://localhost:${devConfig.apiOptions.port}/shop-api`);
         adminClient = env.adminClient;
         server = env.server;
         await server.init({
@@ -125,6 +128,24 @@ describe('PunchOut Gateway Plugin', () => {
                 lastName: 'Buyer',
                 emailAddress: 'punchout-buyer@test.com',
                 customFields: { punchOutUid: mockUID },
+            },
+            password: 'test',
+        });
+
+        // Create second PunchOut customer for cross-user tests
+        await adminClient.query(gql`
+            mutation CreateCustomer($input: CreateCustomerInput!, $password: String) {
+                createCustomer(input: $input, password: $password) {
+                    ... on Customer { id }
+                    ... on ErrorResult { errorCode message }
+                }
+            }
+        `, {
+            input: {
+                firstName: 'PunchOut',
+                lastName: 'Buyer B',
+                emailAddress: 'punchout-buyer-b@test.com',
+                customFields: { punchOutUid: mockUID_B },
             },
             password: 'test',
         });
@@ -303,6 +324,27 @@ describe('PunchOut Gateway Plugin', () => {
         });
     });
 
+    describe('Cross-User Security', () => {
+        it('should not allow User B to transfer User A cart via sID', async () => {
+            const sID_A = 'cross-user-session-A';
+
+            // User A creates a cart
+            await setupPunchOutOrder(shopClient, sID_A, mockUID);
+
+            // User B authenticates with their own credentials
+            nock(mockApiUrl)
+                .get('/gateway/v3/session/validate')
+                .query({ sID: 'cross-user-session-B', uID: mockUID_B })
+                .reply(200);
+            await shopClientB.query(AUTHENTICATE_PUNCHOUT, { sID: 'cross-user-session-B', uID: mockUID_B });
+
+            // User B tries to transfer User A's sID
+            const { transferPunchOutCart } = await shopClientB.query(TRANSFER_PUNCHOUT_CART, { sID: sID_A });
+            expect(transferPunchOutCart.success).toBe(false);
+            expect(transferPunchOutCart.message).toContain('does not belong');
+        });
+    });
+
     describe('Parallel Sessions', () => {
         it('should maintain separate carts for different PunchOut sessions', async () => {
             const sID_A = 'parallel-session-A';
@@ -392,11 +434,13 @@ describe('PunchOut Gateway Plugin', () => {
     });
 
     describe('Shipping Cost Modes', () => {
+        afterEach(() => {
+            // Reset to default mode after each test
+            PunchOutGatewayPlugin.options.shippingCostMode = 'nonZero';
+        });
+
         it('should include non-zero shipping in nonZero mode', async () => {
-            // This test uses the plugin configured with 'nonZero', so shipping (5.00) IS included.
-            // To test 'none' mode we'd need a separate plugin instance.
-            // For now, verify the nonZero mode correctly includes non-zero shipping.
-            const sID = 'shipping-mode-test';
+            const sID = 'shipping-mode-nonzero';
             await setupPunchOutOrder(shopClient, sID, mockUID);
 
             let capturedBody: any;
@@ -409,7 +453,43 @@ describe('PunchOut Gateway Plugin', () => {
 
             const basket = parseBasketFromBody(capturedBody);
             const shipping = basket.basket.find((p: any) => p.type === 'shipping-costs');
-            // Standard Shipping is 5.00 (non-zero), so it should be included in 'nonZero' mode
+            expect(shipping).toBeDefined();
+            expect(shipping.price).toBe(5);
+        });
+
+        it('should omit shipping in none mode', async () => {
+            PunchOutGatewayPlugin.options.shippingCostMode = 'none';
+            const sID = 'shipping-mode-none';
+            await setupPunchOutOrder(shopClient, sID, mockUID);
+
+            let capturedBody: any;
+            nock(mockApiUrl)
+                .post('/gateway/v3/return', (body: any) => { capturedBody = body; return true; })
+                .query({ sID })
+                .reply(200);
+
+            await shopClient.query(TRANSFER_PUNCHOUT_CART, { sID });
+
+            const basket = parseBasketFromBody(capturedBody);
+            const shipping = basket.basket.find((p: any) => p.type === 'shipping-costs');
+            expect(shipping).toBeUndefined();
+        });
+
+        it('should always include shipping in all mode', async () => {
+            PunchOutGatewayPlugin.options.shippingCostMode = 'all';
+            const sID = 'shipping-mode-all';
+            await setupPunchOutOrder(shopClient, sID, mockUID);
+
+            let capturedBody: any;
+            nock(mockApiUrl)
+                .post('/gateway/v3/return', (body: any) => { capturedBody = body; return true; })
+                .query({ sID })
+                .reply(200);
+
+            await shopClient.query(TRANSFER_PUNCHOUT_CART, { sID });
+
+            const basket = parseBasketFromBody(capturedBody);
+            const shipping = basket.basket.find((p: any) => p.type === 'shipping-costs');
             expect(shipping).toBeDefined();
             expect(shipping.price).toBe(5);
         });

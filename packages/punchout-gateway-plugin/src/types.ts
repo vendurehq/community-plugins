@@ -35,6 +35,11 @@ export interface PunchOutAuthInput {
     uID: string;
 }
 
+/** Matches the GraphQL `input PunchOutActiveOrderInput` defined in `PunchOutActiveOrderStrategy.defineInputType()`. */
+export interface PunchOutActiveOrderInput {
+    sID: string;
+}
+
 // ── PunchCommerce request/response DTOs ────────────────────────────
 
 export interface PunchCommerceProduct {

@@ -1,4 +1,4 @@
-import { LanguageCode, PluginCommonModule, RuntimeVendureConfig, VendurePlugin } from '@vendure/core';
+import { LanguageCode, PluginCommonModule, RuntimeVendureConfig, Type, VendurePlugin } from '@vendure/core';
 
 import { shopApiExtensions } from './api/api-extensions';
 import { PunchOutGatewayResolver } from './api/punchout-gateway.resolver';
@@ -86,7 +86,7 @@ const PunchOutOptionsProvider = {
 export class PunchOutGatewayPlugin {
     static options: PunchOutGatewayPluginOptions;
 
-    static init(options: PunchOutGatewayPluginOptions): typeof PunchOutGatewayPlugin {
+    static init(options: PunchOutGatewayPluginOptions): Type<PunchOutGatewayPlugin> {
         this.options = options;
         return this;
     }
