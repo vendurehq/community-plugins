@@ -124,6 +124,7 @@ export const updateProductVariantsDocument = graphql(`
             price
             priceWithTax
             stockOnHand
+            trackInventory
         }
     }
 `);
