@@ -3,10 +3,9 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## 1.0.0 (2026-03-30)
+## 1.1.0
 
-Initial release as `@vendure-community/elasticsearch-plugin`, extracted from `@vendure/elasticsearch-plugin`.
-Equivalent to the functionality in Vendure core v3.5.6, plus the following changes from the v3.6.0 development branch:
+Changes synced from the Vendure core v3.6.0 development branch.
 
 ### Features
 
@@ -19,3 +18,8 @@ Equivalent to the functionality in Vendure core v3.5.6, plus the following chang
 * **elasticsearch-plugin:** include channelId in productInStock cache key ([#4214](https://github.com/vendurehq/vendure/pull/4214))
 * **elasticsearch-plugin:** deprecate built-in health check features ([#4442](https://github.com/vendurehq/vendure/pull/4442))
 * **elasticsearch-plugin:** bump @elastic/elasticsearch to ^9.3.4 ([#4565](https://github.com/vendurehq/vendure/pull/4565))
+
+## 1.0.0 (2026-02-06)
+
+Initial release as `@vendure-community/elasticsearch-plugin`, extracted from `@vendure/elasticsearch-plugin`.
+Equivalent to the functionality in Vendure core v3.5.6.
