@@ -28,8 +28,8 @@
         "access": "public"
     },
     "peerDependencies": {
-        "@vendure/core": "3.6.0-minor-202603280303",
-        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "^3.6.0-0",
+        "@vendure/common": "^3.6.0-0",
         "@mollie/api-client": "4.x"
     },
     "dependencies": {

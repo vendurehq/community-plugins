@@ -25,8 +25,8 @@
     },
     "peerDependencies": {
         "@google-cloud/pubsub": ">=4.0.0",
-        "@vendure/common": "3.6.0-minor-202603280303",
-        "@vendure/core": "3.6.0-minor-202603280303"
+        "@vendure/common": "^3.6.0-0",
+        "@vendure/core": "^3.6.0-0"
     },
     "peerDependenciesMeta": {
         "@google-cloud/pubsub": {
