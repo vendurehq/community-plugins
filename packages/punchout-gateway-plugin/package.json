@@ -35,9 +35,9 @@
         "node-fetch": "^2.7.0"
     },
     "devDependencies": {
-        "@vendure/common": "^3.5.3",
-        "@vendure/core": "^3.5.3",
-        "@vendure/testing": "^3.5.3",
+        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "3.6.0-minor-202603280303",
+        "@vendure/testing": "3.6.0-minor-202603280303",
         "nock": "^13.1.4"
     }
 }

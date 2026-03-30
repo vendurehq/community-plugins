@@ -2,9 +2,20 @@ import path from 'path';
 import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
+// Scope test discovery to the current package when PACKAGE env var is set.
+// Without this, running from the repo root picks up e2e specs from ALL packages,
+// causing port collisions (different packages' test files can hash to the same port).
+const pkg = process.env.PACKAGE;
+const includePattern = pkg
+    ? [`packages/${pkg}/e2e/**/*.e2e-spec.ts`]
+    : ['**/*.e2e-spec.ts'];
+
 export default defineConfig({
     test: {
-        include: ['**/*.e2e-spec.ts'],
+        include: includePattern,
+        // E2e tests share infrastructure (Elasticsearch indices, database state, ports)
+        // and must run sequentially to avoid interference between test files.
+        fileParallelism: false,
         /**
          * For local debugging of the e2e tests, we set a very long timeout value otherwise tests will
          * automatically fail for going over the 5 second default timeout.
