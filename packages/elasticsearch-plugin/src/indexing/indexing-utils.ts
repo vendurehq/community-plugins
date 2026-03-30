@@ -148,7 +148,7 @@ export async function getIndexNameByAlias(client: Client, aliasName: string) {
             name: aliasName,
         });
         const keys = Object.keys(alias);
-        return keys.at(0);
+        return keys[0];
     } else {
         return aliasName;
     }
