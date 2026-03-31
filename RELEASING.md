@@ -40,23 +40,25 @@ These are **automatically generated** by `lerna version` using the conventional 
 
 ### Stable release
 
+Releases are created via GitHub Releases. The tag format determines which package to release:
+
 ```bash
-# 1. Make sure you're on main with a clean working tree
-git checkout main
-git pull
+# Release @vendure-community/elasticsearch-plugin v1.1.0
+gh release create elasticsearch-plugin/v1.1.0 \
+  --title "@vendure-community/elasticsearch-plugin v1.1.0" \
+  --generate-notes
 
-# 2. Run lerna version — this bumps versions, updates changelogs, and creates tags
-npx lerna version
-
-# 3. Push the commit and tags
-git push && git push --tags
-
-# 4. Create a GitHub Release from the tag(s)
-#    This triggers the publish workflow which publishes to npm
+# Release @vendure-community/mollie-plugin v1.0.1
+gh release create mollie-plugin/v1.0.1 \
+  --title "@vendure-community/mollie-plugin v1.0.1" \
+  --generate-notes
 ```
 
-Alternatively, you can manually trigger the publish workflow:
-**Actions → Publish to NPM → Run workflow → publish_type: release**
+The CI workflow then:
+1. Parses the tag to determine the package name and version
+2. Bumps `package.json` to the tagged version
+3. Builds and publishes to npm with the `latest` tag
+4. Commits the version bump back to `main`
 
 ### Pre-release / nightly
 

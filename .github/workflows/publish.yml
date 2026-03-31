@@ -3,6 +3,12 @@ name: Publish to NPM
 # This workflow handles all publishing to npm for releases and nightly
 # pre-release builds. We use a single workflow file because npm Trusted
 # Publishing currently supports only a single workflow file.
+#
+# Release flow:
+#   gh release create elasticsearch-plugin/v1.1.0 --title "@vendure-community/elasticsearch-plugin v1.1.0" --generate-notes
+#   This triggers the workflow, which parses the tag to determine the package
+#   and version, bumps package.json, builds, publishes, and commits the version
+#   bump back to main.
 
 on:
     release:
@@ -16,10 +22,9 @@ on:
                 required: true
                 type: choice
                 options:
-                    - release
                     - nightly
             package:
-                description: 'Package to publish (nightly only, leave "all" for release)'
+                description: 'Package to publish (leave "all" for all packages)'
                 required: false
                 type: choice
                 options:
@@ -44,6 +49,8 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             publish_type: ${{ steps.determine.outputs.publish_type }}
+            package_name: ${{ steps.parse_tag.outputs.package_name }}
+            version: ${{ steps.parse_tag.outputs.version }}
         steps:
             - name: Determine publish type
               id: determine
@@ -56,11 +63,28 @@ jobs:
                     echo "publish_type=${{ inputs.publish_type }}" >> $GITHUB_OUTPUT
                   fi
 
-            - name: Validate inputs
-              if: github.event_name == 'workflow_dispatch'
+            # For releases: parse the tag to get package name and version
+            # Tag format: <package-name>/v<version> (e.g. elasticsearch-plugin/v1.1.0)
+            - name: Parse release tag
+              id: parse_tag
+              if: github.event_name == 'release'
               run: |
-                  if [ "${{ inputs.publish_type }}" == "release" ] && [ "${{ inputs.package }}" != "all" ] && [ "${{ inputs.package }}" != "" ]; then
-                    echo "::error::Release publishes must use 'all' packages. Per-package selection is only for nightly builds."
+                  TAG="${{ github.event.release.tag_name }}"
+                  PACKAGE_NAME="${TAG%/v*}"
+                  VERSION="${TAG#*/v}"
+                  echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  echo "Releasing @vendure-community/$PACKAGE_NAME@$VERSION"
+
+                  # Validate tag format
+                  if [[ ! "$TAG" =~ ^[a-z-]+/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    echo "::error::Invalid tag format '$TAG'. Expected '<package-name>/v<semver>' (e.g. elasticsearch-plugin/v1.1.0)"
+                    exit 1
+                  fi
+
+                  # Validate package exists
+                  if [ ! -d "packages/$PACKAGE_NAME" ]; then
+                    echo "::error::Package directory 'packages/$PACKAGE_NAME' not found"
                     exit 1
                   fi
 
@@ -68,7 +92,7 @@ jobs:
         needs: setup
         runs-on: ubuntu-latest
         permissions:
-            contents: read
+            contents: write
             id-token: write
         steps:
             - name: Checkout
@@ -113,15 +137,34 @@ jobs:
               if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
               run: npm run build
 
-            # Nightly builds: configure git and bump to pre-release versions.
-            # The version bump is committed (but never pushed) so that npm provenance
-            # attestation links to a commit whose package.json matches the published version.
             - name: Configure Git
-              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
+              if: needs.setup.outputs.publish_type == 'release' || (needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true')
               run: |
                   git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
                   git config --global user.name "github-actions[bot]"
 
+            # Release: bump version from tag, publish, commit back
+            - name: Bump version from tag
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  cd packages/${{ needs.setup.outputs.package_name }}
+                  npm version ${{ needs.setup.outputs.version }} --no-git-tag-version
+                  echo "Bumped to ${{ needs.setup.outputs.version }}"
+
+            - name: Publish to NPM (release)
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  cd packages/${{ needs.setup.outputs.package_name }}
+                  npm publish --access public --provenance
+
+            - name: Commit version bump
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  git add packages/${{ needs.setup.outputs.package_name }}/package.json
+                  git commit -m "chore: release @vendure-community/${{ needs.setup.outputs.package_name }}@${{ needs.setup.outputs.version }}"
+                  git push origin HEAD:main
+
+            # Nightly: bump to timestamped pre-release, publish with dev tag
             - name: Get current date
               if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
               id: date
@@ -139,25 +182,13 @@ jobs:
                     'NEW=$(node -p "const v=require(\"./package.json\").version.replace(/-.*/,\"\").split(\".\");v[2]++;v.join(\".\")") && \
                      npm version "${NEW}-dev.${{ steps.date.outputs.date }}" --no-git-tag-version'
 
-            - name: Commit version changes
+            # The version bump is committed (but never pushed) so that npm provenance
+            # attestation links to a commit whose package.json matches the published version.
+            - name: Commit version changes (nightly)
               if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
               run: |
                   git add packages/*/package.json
                   git commit -m "chore: Bump version for nightly pre-release"
-
-            # Publish to npm with provenance attestation.
-            # Note: we do not use `lerna publish` because it fails with Trusted Publishing.
-            # We use `lerna exec` with `npm publish` directly instead.
-            # --access public is also set in each package's publishConfig but kept here
-            # as a safety net for first-time scoped package publishes.
-            - name: Publish to NPM (release)
-              if: needs.setup.outputs.publish_type == 'release'
-              run: |
-                  ARGS="--access public --provenance"
-                  if [ "${{ inputs.dry-run }}" = "true" ]; then
-                    ARGS="$ARGS --dry-run"
-                  fi
-                  npx lerna exec --no-private -- npm publish $ARGS
 
             - name: Publish to NPM (nightly)
               if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
