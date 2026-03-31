@@ -5,11 +5,13 @@
  * to `default` when the field is empty or missing.
  *
  * @example
+ * ```ts
  * // Static value
  * unit: 'KG'
  *
  * // Custom field with fallback
  * unit: { customField: 'punchOutUnit', default: 'PCE' }
+ * ```
  */
 export type ProductFieldMapping<T extends string | number = string> =
     | T
@@ -61,11 +63,13 @@ export interface PunchOutGatewayPluginOptions {
      * Vendure's default piece-based units.
      *
      * @example
+     * ```ts
      * productFieldMapping: {
      *     unit: { customField: 'punchOutUnit', default: 'PCE' },
      *     unit_name: { customField: 'punchOutUnitName', default: 'Piece' },
      *     weight: { customField: 'productWeight', default: 0 },
      * }
+     * ```
      */
     productFieldMapping?: ProductFieldMappings;
 }

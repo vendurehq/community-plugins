@@ -2,7 +2,7 @@
 title: "PunchOutGatewayPluginOptions"
 generated: true
 ---
-<GenerationInfo sourceFile="packages/punchout-gateway-plugin/src/types.ts" sourceLine="39" packageName="@vendure-community/punchout-gateway-plugin" />
+<GenerationInfo sourceFile="packages/punchout-gateway-plugin/src/types.ts" sourceLine="41" packageName="@vendure-community/punchout-gateway-plugin" />
 
 Configuration options for the [PunchOutGatewayPlugin](/reference/punch-out-gateway-plugin/#punchoutgatewayplugin).
 
@@ -34,11 +34,13 @@ interface PunchOutGatewayPluginOptions {
 
 *Example*
 
+```ts
 productFieldMapping: {
     unit: { customField: 'punchOutUnit', default: 'PCE' },
     unit_name: { customField: 'punchOutUnitName', default: 'Piece' },
     weight: { customField: 'productWeight', default: 0 },
 }
+```
 
 
 </div>
