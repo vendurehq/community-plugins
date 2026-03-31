@@ -2,7 +2,7 @@
  * @description
  * Configuration options for the {@link SentryPlugin}.
  *
- * @docsCategory core plugins/SentryPlugin
+ * @docsCategory SentryPlugin
  */
 export interface SentryPluginOptions {
     /**

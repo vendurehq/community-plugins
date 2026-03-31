@@ -8,7 +8,7 @@ import { SentryPluginOptions } from './types';
 /**
  * @description
  * Service for capturing errors and messages to Sentry.
- * @docsCategory core plugins/SentryPlugin
+ * @docsCategory SentryPlugin
  */
 @Injectable()
 export class SentryService {

@@ -23,8 +23,7 @@ type AdditionalCustomerCreateParams = Partial<Omit<Stripe.CustomerCreateParams, 
  * @description
  * Configuration options for the Stripe payments plugin.
  *
- * @docsCategory core plugins/PaymentsPlugin
- * @docsPage StripePlugin
+ * @docsCategory StripePlugin
  */
 export interface StripePluginOptions {
     /**

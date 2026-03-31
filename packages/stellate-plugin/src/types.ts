@@ -4,7 +4,7 @@ import { PurgeRule } from './purge-rule';
  * @description
  * Configuration options for the StellatePlugin.
  *
- * @docsCategory core plugins/StellatePlugin
+ * @docsCategory StellatePlugin
  */
 export interface StellatePluginOptions {
     /**

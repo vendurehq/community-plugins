@@ -239,7 +239,7 @@ const StellateOptionsProvider = {
  *
  *
  * @since 2.1.5
- * @docsCategory core plugins/StellatePlugin
+ * @docsCategory StellatePlugin
  */
 @VendurePlugin({
     imports: [PluginCommonModule],

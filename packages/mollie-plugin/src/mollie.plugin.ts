@@ -22,8 +22,7 @@ export type AdditionalEnabledPaymentMethodsParams = Partial<Omit<ListParameters,
  * @description
  * Configuration options for the Mollie payments plugin.
  *
- * @docsCategory core plugins/PaymentsPlugin
- * @docsPage MolliePlugin
+ * @docsCategory MolliePlugin
  */
 export interface MolliePluginOptions {
     /**
@@ -224,8 +223,7 @@ export interface MolliePluginOptions {
  * To finalize an order in `ArrangingAdditionalPayment` status, you can use call the `createMolliePaymentIntent` mutation again with an additional `orderId` as input.
  * The `orderId` argument is needed, because an order in `ArrangingAdditionalPayment` status is not an active order anymore.
  *
- * @docsCategory core plugins/PaymentsPlugin
- * @docsPage MolliePlugin
+ * @docsCategory MolliePlugin
  * @docsWeight 0
  */
 @VendurePlugin({

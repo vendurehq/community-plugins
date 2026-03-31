@@ -7,7 +7,7 @@ import { StellateService } from './service/stellate.service';
  * @description
  * Configures a {@link PurgeRule}.
  *
- * @docsCategory core plugins/StellatePlugin
+ * @docsCategory StellatePlugin
  * @docsPage PurgeRule
  */
 export interface PurgeRuleConfig<Event extends VendureEvent> {
@@ -42,7 +42,7 @@ export interface PurgeRuleConfig<Event extends VendureEvent> {
  * make calls to the [Stellate Purging API](https://docs.stellate.co/docs/purging-api) via
  * the provided {@link StellateService} instance.
  *
- * @docsCategory core plugins/StellatePlugin
+ * @docsCategory StellatePlugin
  * @docsPage PurgeRule
  * @docsWeight 0
  */

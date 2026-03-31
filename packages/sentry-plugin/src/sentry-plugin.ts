@@ -139,7 +139,7 @@ const SentryOptionsProvider = {
  *
  * You should then be able to see the error in your Sentry dashboard (it may take a couple of minutes to appear).
  *
- * @docsCategory core plugins/SentryPlugin
+ * @docsCategory SentryPlugin
  */
 @VendurePlugin({
     imports: [PluginCommonModule],

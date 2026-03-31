@@ -1,0 +1,55 @@
+---
+title: "PunchOutGatewayPlugin"
+generated: true
+---
+<GenerationInfo sourceFile="packages/punchout-gateway-plugin/src/punchout-gateway-plugin.ts" sourceLine="53" packageName="@vendure-community/punchout-gateway-plugin" />
+
+A plugin that integrates Vendure with [PunchCommerce](https://www.punchcommerce.com/) to enable
+PunchOut/cXML procurement gateway functionality. This allows procurement systems to redirect users
+to your Vendure storefront, where they can browse and add items to a cart, then transfer the cart
+back to the procurement system.
+
+## Installation
+
+`yarn add @vendure-community/punchout-gateway-plugin`
+
+or
+
+`npm install @vendure-community/punchout-gateway-plugin`
+
+## Setup
+
+```ts
+import { PunchOutGatewayPlugin } from '@vendure-community/punchout-gateway-plugin';
+
+const config: VendureConfig = {
+    plugins: [
+        PunchOutGatewayPlugin.init({
+            apiUrl: 'https://your-punchcommerce-instance.com',
+        }),
+    ],
+};
+```
+
+```ts title="Signature"
+class PunchOutGatewayPlugin {
+    static options: PunchOutGatewayPluginOptions;
+    init(options: PunchOutGatewayPluginOptions) => Type<PunchOutGatewayPlugin>;
+}
+```
+
+<div className="members-wrapper">
+
+### options
+
+<MemberInfo kind="property" type={`<a href='/reference/punch-out-gateway-plugin/punch-out-gateway-plugin-options#punchoutgatewaypluginoptions'>PunchOutGatewayPluginOptions</a>`}   />
+
+
+### init
+
+<MemberInfo kind="method" type={`(options: <a href='/reference/punch-out-gateway-plugin/punch-out-gateway-plugin-options#punchoutgatewaypluginoptions'>PunchOutGatewayPluginOptions</a>) => Type<<a href='/reference/punch-out-gateway-plugin/#punchoutgatewayplugin'>PunchOutGatewayPlugin</a>>`}   />
+
+
+
+
+</div>

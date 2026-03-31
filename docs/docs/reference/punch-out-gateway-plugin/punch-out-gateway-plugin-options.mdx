@@ -1,0 +1,44 @@
+---
+title: "PunchOutGatewayPluginOptions"
+generated: true
+---
+<GenerationInfo sourceFile="packages/punchout-gateway-plugin/src/types.ts" sourceLine="39" packageName="@vendure-community/punchout-gateway-plugin" />
+
+Configuration options for the [PunchOutGatewayPlugin](/reference/punch-out-gateway-plugin/#punchoutgatewayplugin).
+
+```ts title="Signature"
+interface PunchOutGatewayPluginOptions {
+    apiUrl?: string;
+    shippingCostMode?: 'all' | 'nonZero' | 'none';
+    productFieldMapping?: ProductFieldMappings;
+}
+```
+
+<div className="members-wrapper">
+
+### apiUrl
+
+<MemberInfo kind="property" type={`string`} default={`'https://www.punchcommerce.de'`}   />
+
+
+### shippingCostMode
+
+<MemberInfo kind="property" type={`'all' | 'nonZero' | 'none'`} default={`'nonZero'`}   />
+
+
+### productFieldMapping
+
+<MemberInfo kind="property" type={`ProductFieldMappings`}   />
+
+
+
+*Example*
+
+productFieldMapping: {
+    unit: { customField: 'punchOutUnit', default: 'PCE' },
+    unit_name: { customField: 'punchOutUnitName', default: 'Piece' },
+    weight: { customField: 'productWeight', default: 0 },
+}
+
+
+</div>
