@@ -12,6 +12,7 @@
         "e2e": "lerna run e2e",
         "lint": "lerna run lint",
         "docs:generate": "tsx scripts/docs/generate-typescript-docs.ts",
+        "docs:compile-manifest": "tsx docs/scripts/compile-manifest.ts",
         "docs:validate": "tsx docs/src/validate.ts"
     },
     "devDependencies": {
