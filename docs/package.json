@@ -1,6 +1,6 @@
 {
     "name": "@vendure-community/docs",
-    "version": "1.0.0",
+    "private": true,
     "description": "Documentation for Vendure community plugins",
     "type": "module",
     "main": "./src/index.ts",
@@ -18,15 +18,5 @@
     "files": ["src", "docs"],
     "dependencies": {
         "@vendure-io/docs-provider": "^0.11.0"
-    },
-    "keywords": ["vendure", "documentation", "docs", "community-plugins"],
-    "license": "GPL-3.0-or-later",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/vendurehq/community-plugins",
-        "directory": "docs"
-    },
-    "publishConfig": {
-        "access": "public"
     }
 }

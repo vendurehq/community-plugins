@@ -11,19 +11,13 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifestInput: DocsPackageManifestInput = {
     id: 'community-plugins',
     name: 'Community Plugins',
-    version: '1.0.0',
+    version: '0.0.0',
     vendureVersion: 'v3',
     basePath: packageRoot,
-    navigation: [
-        {
-            title: 'Reference',
-            slug: 'reference',
-            children: createNestedNavigationFromFolder(
-                join(packageRoot, 'docs/reference'),
-                { extensions: ['.mdx'] },
-            ),
-        },
-    ],
+    navigation: createNestedNavigationFromFolder(
+        join(packageRoot, 'docs/reference'),
+        { extensions: ['.mdx'] },
+    ),
     github: {
         repository: 'vendurehq/community-plugins',
         branch: 'main',
