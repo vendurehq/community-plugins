@@ -30,6 +30,12 @@ export interface ProductFieldMappings {
     weight?: ProductFieldMapping<number>;
 }
 
+/**
+ * @description
+ * Configuration options for the {@link PunchOutGatewayPlugin}.
+ *
+ * @docsCategory core plugins/PunchOutGatewayPlugin
+ */
 export interface PunchOutGatewayPluginOptions {
     /**
      * Base URL of the PunchCommerce gateway API.

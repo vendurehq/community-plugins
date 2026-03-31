@@ -20,8 +20,7 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
  * @description
  * Options for the Braintree plugin.
  *
- * @docsCategory core plugins/PaymentsPlugin
- * @docsPage BraintreePlugin
+ * @docsCategory core plugins/BraintreePlugin
  */
 export interface BraintreePluginOptions {
     /**

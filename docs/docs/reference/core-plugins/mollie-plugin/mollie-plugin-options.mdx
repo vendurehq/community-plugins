@@ -1,0 +1,82 @@
+---
+title: "MolliePluginOptions"
+generated: true
+---
+<GenerationInfo sourceFile="packages/mollie-plugin/src/mollie.plugin.ts" sourceLine="27" packageName="@vendure-community/mollie-plugin" />
+
+Configuration options for the Mollie payments plugin.
+
+```ts title="Signature"
+interface MolliePluginOptions {
+    vendureHost: string;
+    enabledPaymentMethodsParams?: (
+        injector: Injector,
+        ctx: RequestContext,
+        order: Order | null,
+    ) => AdditionalEnabledPaymentMethodsParams | Promise<AdditionalEnabledPaymentMethodsParams>;
+    immediateCapture?: boolean;
+    disableWebhookProcessing?: boolean;
+}
+```
+
+<div className="members-wrapper">
+
+### vendureHost
+
+<MemberInfo kind="property" type={`string`}   />
+
+The host of your Vendure server, e.g. `'https://my-vendure.io'`.
+This is used by Mollie to send webhook events to the Vendure server
+### enabledPaymentMethodsParams
+
+<MemberInfo kind="property" type={`(         injector: Injector,         ctx: RequestContext,         order: Order | null,     ) => AdditionalEnabledPaymentMethodsParams | Promise<AdditionalEnabledPaymentMethodsParams>`}  since="2.2.0"  />
+
+Provide additional parameters to the Mollie enabled payment methods API call. By default,
+the plugin will already pass the `resource` parameter.
+
+For example, if you want to provide a `locale` and `billingCountry` for the API call, you can do so like this:
+
+**Note:** The `order` argument is possibly `null`, this could happen when you fetch the available payment methods
+before the order is created.
+
+*Example*
+
+```ts
+import { VendureConfig } from '@vendure/core';
+import { MolliePlugin, getLocale } from '@vendure-community/mollie-plugin';
+
+export const config: VendureConfig = {
+  // ...
+  plugins: [
+    MolliePlugin.init({
+      enabledPaymentMethodsParams: (injector, ctx, order) => {
+        const locale = order?.billingAddress?.countryCode
+            ? getLocale(order.billingAddress.countryCode, ctx.languageCode)
+            : undefined;
+
+        return {
+          locale,
+          billingCountry: order?.billingAddress?.countryCode,
+        },
+      }
+    }),
+  ],
+};
+```
+### immediateCapture
+
+<MemberInfo kind="property" type={`boolean`}   />
+
+Immediate capture mode for pay-later methods like Klarna.
+Setting this option will make the plugin ignore the `immediateCapture` option in the `createMolliePaymentIntent` mutation.
+
+The default is true, unless set otherwise as input in the `createMolliePaymentIntent` mutation.
+### disableWebhookProcessing
+
+<MemberInfo kind="property" type={`boolean`}  since="3.6.0"  />
+
+Disable the processing of incoming Mollie webhooks.
+Handle with care! This will keep orders in 'AddingItems' state if you don't manually process the Mollie payments via the `syncMolliePaymentStatus` mutation.
+
+
+</div>

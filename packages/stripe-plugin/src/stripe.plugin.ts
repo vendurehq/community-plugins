@@ -154,8 +154,7 @@ import { StripePluginOptions } from './types';
  *    ```
  * 4. The Stripe CLI will create a webhook signing secret you can then use in your config of the StripePlugin.
  *
- * @docsCategory core plugins/PaymentsPlugin
- * @docsPage StripePlugin
+ * @docsCategory core plugins/StripePlugin
  */
 @VendurePlugin({
     imports: [PluginCommonModule],
