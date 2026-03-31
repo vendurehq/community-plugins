@@ -3,12 +3,13 @@ import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 // Scope test discovery to the current package when PACKAGE env var is set.
-// Without this, running from the repo root picks up e2e specs from ALL packages,
-// causing port collisions (different packages' test files can hash to the same port).
+// When run via `lerna run e2e`, cwd is the package directory (e2e/**/*.e2e-spec.ts).
+// When run from the repo root, we need the full path (packages/{pkg}/e2e/**/*.e2e-spec.ts).
 const pkg = process.env.PACKAGE;
-const includePattern = pkg
+const isRepoRoot = process.cwd().endsWith('community-plugins') || !process.cwd().includes('/packages/');
+const includePattern = pkg && isRepoRoot
     ? [`packages/${pkg}/e2e/**/*.e2e-spec.ts`]
-    : ['**/*.e2e-spec.ts'];
+    : ['**/e2e/**/*.e2e-spec.ts'];
 
 export default defineConfig({
     test: {
