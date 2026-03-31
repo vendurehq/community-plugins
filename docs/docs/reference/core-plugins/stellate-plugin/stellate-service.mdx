@@ -1,0 +1,66 @@
+---
+title: "StellateService"
+generated: true
+---
+<GenerationInfo sourceFile="packages/stellate-plugin/src/service/stellate.service.ts" sourceLine="23" packageName="@vendure-community/stellate-plugin" />
+
+The StellateService is used to purge the Stellate cache when certain events occur.
+
+```ts title="Signature"
+class StellateService {
+    constructor(options: StellatePluginOptions)
+    purgeProducts(products: Product[]) => ;
+    purgeProductVariants(productVariants: ProductVariant[]) => ;
+    purgeSearchResults(items: Array<ProductVariant | Product>) => ;
+    purgeAllOfType(type: CachedType) => ;
+    purgeCollections(collections: Collection[]) => ;
+    purgeSearchResponseCacheIdentifiers(collections: Collection[]) => ;
+    purge(type: CachedType, keys?: ID[], keyName:  = 'id') => ;
+}
+```
+
+<div className="members-wrapper">
+
+### constructor
+
+<MemberInfo kind="method" type={`(options: <a href='/reference/core-plugins/stellate-plugin/stellate-plugin-options#stellatepluginoptions'>StellatePluginOptions</a>) => StellateService`}   />
+
+
+### purgeProducts
+
+<MemberInfo kind="method" type={`(products: Product[]) => `}   />
+
+Purges the cache for the given Products.
+### purgeProductVariants
+
+<MemberInfo kind="method" type={`(productVariants: ProductVariant[]) => `}   />
+
+Purges the cache for the given ProductVariants.
+### purgeSearchResults
+
+<MemberInfo kind="method" type={`(items: Array<ProductVariant | Product>) => `}   />
+
+Purges the cache for SearchResults which contain the given Products or ProductVariants.
+### purgeAllOfType
+
+<MemberInfo kind="method" type={`(type: CachedType) => `}   />
+
+Purges the entire cache for the given type.
+### purgeCollections
+
+<MemberInfo kind="method" type={`(collections: Collection[]) => `}   />
+
+Purges the cache for the given Collections.
+### purgeSearchResponseCacheIdentifiers
+
+<MemberInfo kind="method" type={`(collections: Collection[]) => `}   />
+
+Purges the cache of SearchResults for the given Collections based on slug.
+### purge
+
+<MemberInfo kind="method" type={`(type: CachedType, keys?: ID[], keyName:  = 'id') => `}   />
+
+Purges the cache for the given type and keys.
+
+
+</div>
