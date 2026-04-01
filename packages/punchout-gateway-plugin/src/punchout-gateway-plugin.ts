@@ -26,28 +26,6 @@ const PunchOutOptionsProvider = {
  * to your Vendure storefront, where they can browse and add items to a cart, then transfer the cart
  * back to the procurement system.
  *
- * ## Installation
- *
- * `yarn add \@vendure-community/punchout-gateway-plugin`
- *
- * or
- *
- * `npm install \@vendure-community/punchout-gateway-plugin`
- *
- * ## Setup
- *
- * ```ts
- * import { PunchOutGatewayPlugin } from '\@vendure-community/punchout-gateway-plugin';
- *
- * const config: VendureConfig = {
- *     plugins: [
- *         PunchOutGatewayPlugin.init({
- *             apiUrl: 'https://your-punchcommerce-instance.com',
- *         }),
- *     ],
- * };
- * ```
- *
  * @docsCategory PunchOutGatewayPlugin
  */
 @VendurePlugin({

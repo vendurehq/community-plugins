@@ -2,7 +2,7 @@
 title: "BraintreePlugin"
 generated: true
 ---
-<GenerationInfo sourceFile="packages/braintree-plugin/src/braintree.plugin.ts" sourceLine="240" packageName="@vendure-community/braintree-plugin" />
+<GenerationInfo sourceFile="packages/braintree-plugin/src/braintree.plugin.ts" sourceLine="15" packageName="@vendure-community/braintree-plugin" />
 
 This plugin enables payments to be processed by [Braintree](https://www.braintreepayments.com/), a popular payment provider.
 
@@ -42,7 +42,7 @@ This plugin enables payments to be processed by [Braintree](https://www.braintre
 2. Create a new PaymentMethod in the Admin UI, and select "Braintree payments" as the handler.
 2. Fill in the `Merchant ID`, `Public Key` & `Private Key` from your Braintree sandbox account.
 
-## Storefront usage
+## Storefront Usage
 
 The plugin is designed to work with the [Braintree drop-in UI](https://developers.braintreepayments.com/guides/drop-in/overview/javascript/v3).
 This is a library provided by Braintree which will handle the payment UI for you. You can install it in your storefront project
@@ -185,7 +185,7 @@ async submitPayment() {
 }
 ```
 
-## Storing payment details (vaulting)
+## Storing Payment Details (Vaulting)
 
 Braintree has a [vault feature](https://developer.paypal.com/braintree/articles/control-panel/vault/overview) which allows the secure storage
 of customer's payment information. Using the vault allows you to offer a faster checkout for repeat customers without needing to worry about
@@ -203,7 +203,7 @@ BraintreePlugin.init({
 Since v1.8, it is possible to override vaulting on a per-payment basis by passing `includeCustomerId: false` to the `generateBraintreeClientToken`
 mutation:
 
-```GraphQL
+```graphql
 const { generateBraintreeClientToken } = await graphQlClient.query(gql`
   query GenerateBraintreeClientToken($includeCustomerId: Boolean) {
     generateBraintreeClientToken(includeCustomerId: $includeCustomerId)

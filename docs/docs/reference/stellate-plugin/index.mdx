@@ -2,7 +2,7 @@
 title: "StellatePlugin"
 generated: true
 ---
-<GenerationInfo sourceFile="packages/stellate-plugin/src/stellate-plugin.ts" sourceLine="244" packageName="@vendure-community/stellate-plugin" since="2.1.5" />
+<GenerationInfo sourceFile="packages/stellate-plugin/src/stellate-plugin.ts" sourceLine="27" packageName="@vendure-community/stellate-plugin" since="2.1.5" />
 
 A plugin to integrate the [Stellate](https://stellate.co/) GraphQL caching service with your Vendure server.
 The main purpose of this plugin is to ensure that cached data gets correctly purged in
@@ -25,11 +25,9 @@ npm install @vendure/stellate-plugin
 ## Configuration
 
 The plugin is configured via the `StellatePlugin.init()` method. This method accepts an options object
-which defines the Stellate service name and API token, as well as an array of [PurgeRule](/reference/stellate-plugin/purge-rule#purgerule)s which
+which defines the Stellate service name and API token, as well as an array of `PurgeRule`s which
 define how the plugin will respond to Vendure events in order to trigger calls to the
 Stellate [Purging API](https://stellate.co/docs/graphql-edge-cache/purging-api).
-
-*Example*
 
 ```ts
 import { StellatePlugin, defaultPurgeRules } from '@vendure/stellate-plugin';
@@ -56,8 +54,6 @@ export const config: VendureConfig = {
 
 In your Stellate dashboard, you can use the following configuration example as a sensible default for a
 Vendure application:
-
-*Example*
 
 ```ts
 import { Config } from "stellate";
@@ -114,7 +110,7 @@ const config: Config = {
 export default config;
 ```
 
-## Storefront setup
+## Storefront Setup
 
 In your storefront, you should point your GraphQL client to the Stellate GraphQL API endpoint, which is
 `https://<service-name>.stellate.sh`.
@@ -123,35 +119,31 @@ Wherever you are using the `search` query (typically in product listing & search
 `cacheIdentifier` field to the query. This will ensure that the Stellate cache is correctly purged when
 a Product or Collection is updated.
 
-*Example*
-
 ```ts
 import { graphql } from '../generated/gql';
 
 export const searchProductsDocument = graphql(`
     query SearchProducts($input: SearchInput!) {
         search(input: $input) {
-            cacheIdentifier { // [!code highlight]
-                collectionSlug // [!code highlight]
-            } // [!code highlight]
+            cacheIdentifier {
+                collectionSlug
+            }
             items {
                # ...
             }
         }
     }
-}`);
+`);
 ```
 
 ## Custom PurgeRules
 
 The configuration above only accounts for caching of some of the built-in Vendure entity types. If you have
 custom entity types, you may well want to add them to the Stellate cache. In this case, you'll also need a way to
-purge those entities from the cache when they are updated. This is where the [PurgeRule](/reference/stellate-plugin/purge-rule#purgerule) comes in.
+purge those entities from the cache when they are updated. This is where the `PurgeRule` comes in.
 
 Let's imagine that you have built a simple CMS plugin for Vendure which exposes an `Article` entity in your Shop API, and
 you have added this to your Stellate configuration:
-
-*Example*
 
 ```ts
 import { Config } from "stellate";
@@ -174,9 +166,7 @@ const config: Config = {
 export default config;
 ```
 
-You can then add a custom [PurgeRule](/reference/stellate-plugin/purge-rule#purgerule) to the StellatePlugin configuration:
-
-*Example*
+You can then add a custom `PurgeRule` to the StellatePlugin configuration:
 
 ```ts
 import { StellatePlugin, defaultPurgeRules } from "@vendure/stellate-plugin";
@@ -209,8 +199,6 @@ In development, you can set `devMode: true`, which will prevent any calls being 
 
 If you want to log the calls that _would_ be made to the Stellate Purge API when in devMode, you can set `debugLogging: true`.
 Note that debugLogging generates a lot of debug-level logging, so it is recommended to only enable this when needed.
-
-*Example*
 
 ```ts
 import { StellatePlugin, defaultPurgeRules } from '@vendure/stellate-plugin';
