@@ -14,7 +14,7 @@ import { PubSubJobQueueStrategy } from './pub-sub-job-queue-strategy';
  * Note: To use this plugin, you need to manually install the `@google-cloud/pubsub` package:
  *
  * ```shell
- * npm install @google-cloud/pubsub@^4.11.0
+ * npm install \@google-cloud/pubsub@^4.11.0
  * ```
  *
  * @docsCategory PubSubPlugin
