@@ -2,7 +2,7 @@
 title: "StripePlugin"
 generated: true
 ---
-<GenerationInfo sourceFile="packages/stripe-plugin/src/stripe.plugin.ts" sourceLine="159" packageName="@vendure-community/stripe-plugin" />
+<GenerationInfo sourceFile="packages/stripe-plugin/src/stripe.plugin.ts" sourceLine="18" packageName="@vendure-community/stripe-plugin" />
 
 Plugin to enable payments through [Stripe](https://stripe.com/docs) via the Payment Intents API.
 
@@ -37,11 +37,11 @@ the Stripe CLI to test your webhook locally. See the _local development_ section
       }),
     ]
     ````
-    For all the plugin options, see the [StripePluginOptions](/reference/stripe-plugin/stripe-plugin-options#stripepluginoptions) type.
+    For all the plugin options, see the `StripePluginOptions` type.
 2. Create a new PaymentMethod in the Admin UI, and select "Stripe payments" as the handler.
 3. Set the webhook secret and API key in the PaymentMethod form.
 
-## Storefront usage
+## Storefront Usage
 
 The plugin is designed to work with the [Custom payment flow](https://stripe.com/docs/payments/accept-a-payment?platform=web&ui=elements).
 In this flow, Stripe provides libraries which handle the payment UI and confirmation for you. You can install it in your storefront project
@@ -58,7 +58,7 @@ If you are using React, you should also consider installing `@stripe/react-strip
 The high-level workflow is:
 1. Create a "payment intent" on the server by executing the `createStripePaymentIntent` mutation which is exposed by this plugin.
 2. Use the returned client secret to instantiate the Stripe Payment Element:
-   ```ts
+   ```tsx
    import { Elements } from '@stripe/react-stripe-js';
    import { loadStripe, Stripe } from '@stripe/stripe-js';
    import { CheckoutForm } from './CheckoutForm';
@@ -82,7 +82,7 @@ The high-level workflow is:
      );
    }
    ```
-   ```ts
+   ```tsx
    // CheckoutForm.tsx
    import { useStripe, useElements, PaymentElement } from '@stripe/react-stripe-js';
    import { FormEvent } from 'react';
@@ -131,12 +131,10 @@ The high-level workflow is:
 3. Once the form is submitted and Stripe processes the payment, the webhook takes care of updating the order without additional action
 in the storefront. As in the code above, the customer will be redirected to `/checkout/confirmation/${orderCode}`.
 
-:::info
-A full working storefront example of the Stripe integration can be found in the
-[Remix Starter repo](https://github.com/vendurehq/storefront-remix-starter/tree/master/app/components/checkout/stripe)
-:::
+> **Note:** A full working storefront example of the Stripe integration can be found in the
+> [Remix Starter repo](https://github.com/vendurehq/storefront-remix-starter/tree/master/app/components/checkout/stripe)
 
-## Local development
+## Local Development
 
 1. Download & install the Stripe CLI: https://stripe.com/docs/stripe-cli
 2. From your Stripe dashboard, go to Developers -> Webhooks and click "Add an endpoint" and follow the instructions

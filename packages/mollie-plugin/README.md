@@ -1,8 +1,4 @@
----
-title: "MolliePlugin"
-generated: true
----
-<GenerationInfo sourceFile="packages/mollie-plugin/src/mollie.plugin.ts" sourceLine="102" packageName="@vendure-community/mollie-plugin" />
+# Mollie Payment Plugin
 
 Plugin to enable payments through the [Mollie platform](https://docs.mollie.com/).
 This plugin uses the Order API from Mollie, not the Payments API.
@@ -133,26 +129,3 @@ In some cases, a customer can add items to the active order, while a Mollie chec
 Both of these actions will result in an order being in `ArrangingAdditionalPayment` status.
 To finalize an order in `ArrangingAdditionalPayment` status, you can use call the `createMolliePaymentIntent` mutation again with an additional `orderId` as input.
 The `orderId` argument is needed, because an order in `ArrangingAdditionalPayment` status is not an active order anymore.
-
-```ts title="Signature"
-class MolliePlugin {
-    static options: MolliePluginOptions;
-    init(options: MolliePluginOptions) => typeof MolliePlugin;
-}
-```
-
-<div className="members-wrapper">
-
-### options
-
-<MemberInfo kind="property" type={`<a href='/reference/mollie-plugin/mollie-plugin-options#molliepluginoptions'>MolliePluginOptions</a>`}   />
-
-
-### init
-
-<MemberInfo kind="method" type={`(options: <a href='/reference/mollie-plugin/mollie-plugin-options#molliepluginoptions'>MolliePluginOptions</a>) => typeof <a href='/reference/mollie-plugin/#mollieplugin'>MolliePlugin</a>`}   />
-
-Initialize the mollie payment plugin
-
-
-</div>
