@@ -1,17 +1,13 @@
-
 import { bootstrap, defaultConfig, JobQueueService, Logger, mergeConfig } from '@vendure/core';
 import { populate } from '@vendure/core/cli';
 import { clearAllTables, populateCustomers } from '@vendure/testing';
 import path from 'path';
 
-
 import { devConfig } from './dev-config';
-import { initialData } from './mock-data/data-sources/initial-data';
-
-/* eslint-disable no-console */
+import { initialData } from '../e2e-common/e2e-initial-data';
 
 /**
- * A CLI script which populates the dev database with deterministic random data.
+ * Populates the dev database with test data.
  */
 const populateConfig = mergeConfig(
     defaultConfig,

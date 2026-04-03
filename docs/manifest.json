@@ -16,7 +16,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "ElasticsearchPlugin",
@@ -30,7 +30,19 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
+    },
+    {
+      "title": "MeilisearchPlugin",
+      "slug": "meilisearch-plugin",
+      "file": "docs/reference/meilisearch-plugin/index.mdx",
+      "children": [
+        {
+          "title": "MeilisearchOptions",
+          "slug": "meilisearch-options",
+          "file": "docs/reference/meilisearch-plugin/meilisearch-options.mdx"
+        }
+      ]
     },
     {
       "title": "MolliePlugin",
@@ -44,7 +56,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "PubSubPlugin",
@@ -72,7 +84,7 @@
           "lastModified": "2026-03-31T16:42:28+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "SentryPlugin",
@@ -92,7 +104,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "StellatePlugin",
@@ -118,7 +130,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "StripePlugin",
@@ -132,7 +144,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-04-03T11:40:19+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     }
   ],
   "github": {
