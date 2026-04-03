@@ -14,7 +14,7 @@ see the [Stellate Purging API docs](https://docs.stellate.co/docs/purging-api#au
 
 ## Installation
 
-```
+```shell
 npm install @vendure/stellate-plugin
 ```
 

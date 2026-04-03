@@ -7,11 +7,6 @@ This plugin enables payments to be processed by [Braintree](https://www.braintre
 1. You will need to create a Braintree sandbox account as outlined in https://developers.braintreepayments.com/start/overview.
 2. Then install `braintree` and `@types/braintree` from npm. This plugin was written with `v3.x` of the Braintree lib.
     ```shell
-    yarn add @vendure-community/braintree-plugin braintree
-    yarn add -D @types/braintree
-    ```
-    or
-    ```shell
     npm install @vendure-community/braintree-plugin braintree
     npm install -D @types/braintree
     ```
@@ -45,8 +40,6 @@ This is a library provided by Braintree which will handle the payment UI for you
 with:
 
 ```shell
-yarn add braintree-web-drop-in
-# or
 npm install braintree-web-drop-in
 ```
 

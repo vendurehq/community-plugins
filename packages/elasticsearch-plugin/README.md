@@ -30,8 +30,6 @@ and testing without authentication and security enabled. Refer to ElasticSearch 
 ## Installation
 
 ```shell
-yarn add @elastic/elasticsearch @vendure/elasticsearch-plugin
-# or
 npm install @elastic/elasticsearch @vendure/elasticsearch-plugin
 ```
 

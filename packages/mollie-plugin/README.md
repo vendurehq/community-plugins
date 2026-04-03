@@ -8,11 +8,9 @@ This plugin uses the Order API from Mollie, not the Payments API.
 1. You will need to create a Mollie account and get your api key from the Mollie dashboard.
 2. Install the Payments plugin and the Mollie client:
 
-    `yarn add @vendure-community/mollie-plugin @mollie/api-client`
-
-    or
-
-    `npm install @vendure-community/mollie-plugin @mollie/api-client`
+    ```shell
+    npm install @vendure-community/mollie-plugin @mollie/api-client
+    ```
 
 ## Setup
 

@@ -21,8 +21,8 @@ which you will need to provide to the plugin.
 
 ## Installation
 
-```sh
-npm install --save @vendure/sentry-plugin
+```shell
+npm install @vendure/sentry-plugin
 ```
 
 ## Environment Variables
@@ -47,13 +47,13 @@ Make sure the `SENTRY_DSN` environment variable is defined.
 The Sentry SDK must be initialized before your application starts. This is done by preloading
 the instrument file when starting your Vendure server:
 
-```sh
+```shell
 node --import @vendure/sentry-plugin/instrument ./dist/index.js
 ```
 
 Or if using TypeScript directly with tsx:
 
-```sh
+```shell
 tsx --import @vendure/sentry-plugin/instrument ./src/index.ts
 ```
 

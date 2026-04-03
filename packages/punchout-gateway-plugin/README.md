@@ -13,7 +13,7 @@ PunchCommerce handles all protocol translation — this plugin only speaks JSON 
 
 ## Installation
 
-```bash
+```shell
 npm install @vendure-community/punchout-gateway-plugin
 ```
 
