@@ -9,11 +9,11 @@
         "dev": "concurrently npm:dev:server npm:dev:worker"
     },
     "dependencies": {
-        "@vendure/asset-server-plugin": "^3.5.3",
-        "@vendure/common": "^3.5.3",
-        "@vendure/core": "^3.5.3",
-        "@vendure/graphiql-plugin": "^3.5.3",
-        "@vendure/testing": "^3.5.3",
+        "@vendure/asset-server-plugin": "3.6.0-minor-202603280303",
+        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "3.6.0-minor-202603280303",
+        "@vendure/graphiql-plugin": "3.6.0-minor-202603280303",
+        "@vendure/testing": "3.6.0-minor-202603280303",
         "better-sqlite3": "^11.0.0",
         "dotenv": "^16.4.0",
         "ts-node": "^10.9.0",

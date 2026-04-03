@@ -18,7 +18,7 @@ type CachedType =
  * @description
  * The StellateService is used to purge the Stellate cache when certain events occur.
  *
- * @docsCategory core plugins/StellatePlugin
+ * @docsCategory StellatePlugin
  */
 export class StellateService {
     private readonly purgeApiUrl: string;

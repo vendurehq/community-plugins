@@ -1,0 +1,43 @@
+{
+    "name": "@vendure-community/braintree-plugin",
+    "version": "1.0.0",
+    "license": "GPL-3.0-or-later",
+    "main": "lib/index.js",
+    "types": "lib/index.d.ts",
+    "files": [
+        "lib/**/*"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/vendurehq/community-plugins",
+        "directory": "packages/braintree-plugin"
+    },
+    "private": false,
+    "scripts": {
+        "watch": "tsc -p ./tsconfig.build.json --watch",
+        "build": "rimraf lib && tsc -p ./tsconfig.build.json",
+        "lint": "eslint .",
+        "ci": "npm run build",
+        "dev-server": "npm run build && DB=sqlite node -r ts-node/register e2e/braintree-dev-server.ts"
+    },
+    "homepage": "https://www.vendure.io/",
+    "funding": "https://github.com/sponsors/michaelbromley",
+    "publishConfig": {
+        "access": "public",
+        "provenance": true
+    },
+    "peerDependencies": {
+        "@vendure/core": "^3.6.0-0",
+        "@vendure/common": "^3.6.0-0",
+        "braintree": "3.x"
+    },
+    "devDependencies": {
+        "@types/braintree": "^3.3.11",
+        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "3.6.0-minor-202603280303",
+        "@vendure/testing": "3.6.0-minor-202603280303",
+        "braintree": "^3.22.0",
+        "rimraf": "^5.0.5",
+        "typescript": "5.8.2"
+    }
+}

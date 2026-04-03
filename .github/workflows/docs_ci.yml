@@ -1,0 +1,98 @@
+name: Docs CI
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - 'docs/**'
+    pull_request:
+        branches:
+            - main
+        paths:
+            - 'docs/**'
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    validate:
+        name: Validate docs
+        permissions:
+            contents: read
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Validate manifest
+              run: npm run docs:validate
+
+    generate-manifest:
+        name: Generate & commit manifest
+        # Skip fork PRs — can't push back to fork branches
+        if: ${{ github.event_name == 'push' || !github.event.pull_request.head.repo.fork }}
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            - name: Generate CI Bot Token
+              id: app-token
+              uses: actions/create-github-app-token@v2
+              with:
+                  app-id: ${{ secrets.CI_BOT_APP_ID }}
+                  private-key: ${{ secrets.CI_BOT_APP_PRIVATE_KEY }}
+
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  token: ${{ steps.app-token.outputs.token }}
+                  ref: ${{ github.head_ref || github.ref }}
+                  fetch-depth: 0
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Generate manifest
+              run: npm run docs:compile-manifest
+
+            - name: Check for changes
+              id: diff
+              run: |
+                  git add docs/manifest.json
+                  if git diff --cached --quiet; then
+                    echo "changed=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "changed=true" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Get CI Bot user info
+              if: steps.diff.outputs.changed == 'true'
+              id: get-user
+              env:
+                  GH_TOKEN: ${{ steps.app-token.outputs.token }}
+              run: |
+                  user_id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}%5Bbot%5D" --jq .id)
+                  echo "user-id=$user_id" >> "$GITHUB_OUTPUT"
+
+            - name: Commit and push manifest
+              if: steps.diff.outputs.changed == 'true'
+              run: |
+                  git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+                  git config user.email "${{ steps.get-user.outputs.user-id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+                  git commit -m "docs: regenerate manifest.json [skip ci]"
+                  git push

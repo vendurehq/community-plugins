@@ -1,0 +1,43 @@
+{
+    "name": "@vendure-community/punchout-gateway-plugin",
+    "version": "0.1.0",
+    "license": "GPL-3.0-or-later",
+    "main": "lib/index.js",
+    "types": "lib/index.d.ts",
+    "files": [
+        "lib/**/*"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/vendurehq/community-plugins",
+        "directory": "packages/punchout-gateway-plugin"
+    },
+    "scripts": {
+        "watch": "tsc -p ./tsconfig.build.json --watch",
+        "build": "rimraf lib && tsc -p ./tsconfig.build.json",
+        "e2e": "cross-env PACKAGE=punchout-gateway-plugin vitest --config ../../e2e-common/vitest.config.mts --run",
+        "e2e:watch": "cross-env PACKAGE=punchout-gateway-plugin vitest --config ../../e2e-common/vitest.config.mts",
+        "lint": "eslint ."
+    },
+    "homepage": "https://www.vendure.io",
+    "funding": "https://github.com/sponsors/michaelbromley",
+    "publishConfig": {
+        "access": "public",
+        "provenance": true
+    },
+    "peerDependencies": {
+        "@vendure/core": ">=3.0.0",
+        "@vendure/common": ">=3.0.0"
+    },
+    "dependencies": {
+        "form-data": "^4.0.0",
+        "graphql-tag": "^2.12.6",
+        "node-fetch": "^2.7.0"
+    },
+    "devDependencies": {
+        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "3.6.0-minor-202603280303",
+        "@vendure/testing": "3.6.0-minor-202603280303",
+        "nock": "^13.1.4"
+    }
+}

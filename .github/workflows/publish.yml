@@ -1,28 +1,43 @@
-name: Publish to npm
+name: Publish to NPM
+
+# This workflow handles all publishing to npm for releases and nightly
+# pre-release builds. We use a single workflow file because npm Trusted
+# Publishing currently supports only a single workflow file.
+#
+# Release flow:
+#   gh release create elasticsearch-plugin/v1.1.0 --title "@vendure-community/elasticsearch-plugin v1.1.0" --generate-notes
+#   This triggers the workflow, which parses the tag to determine the package
+#   and version, bumps package.json, builds, publishes, and commits the version
+#   bump back to main.
 
 on:
+    release:
+        types: [published]
+    schedule:
+        - cron: '0 3 * * *' # Nightly at 03:00 UTC
     workflow_dispatch:
         inputs:
-            package:
-                description: 'Package to publish'
+            publish_type:
+                description: 'Type of publish'
                 required: true
+                type: choice
+                options:
+                    - nightly
+            package:
+                description: 'Package to publish (leave "all" for all packages)'
+                required: false
                 type: choice
                 options:
                     - all
+                    - braintree-plugin
                     - elasticsearch-plugin
-                    - payments-plugin
+                    - mollie-plugin
+                    - punchout-gateway-plugin
                     - sentry-plugin
                     - stellate-plugin
+                    - stripe-plugin
                     - pub-sub-plugin
-            dist-tag:
-                description: 'npm dist-tag'
-                required: true
-                type: choice
-                options:
-                    - latest
-                    - next
-                    - dev
-                default: 'latest'
+                default: 'all'
             dry-run:
                 description: 'Dry run (no actual publish)'
                 required: false
@@ -30,66 +45,173 @@ on:
                 default: false
 
 jobs:
+    setup:
+        runs-on: ubuntu-latest
+        outputs:
+            publish_type: ${{ steps.determine.outputs.publish_type }}
+            package_name: ${{ steps.parse_tag.outputs.package_name }}
+            version: ${{ steps.parse_tag.outputs.version }}
+            dist_tag: ${{ steps.parse_tag.outputs.dist_tag }}
+        steps:
+            - name: Determine publish type
+              id: determine
+              run: |
+                  if [ "${{ github.event_name }}" == "release" ]; then
+                    echo "publish_type=release" >> $GITHUB_OUTPUT
+                  elif [ "${{ github.event_name }}" == "schedule" ]; then
+                    echo "publish_type=nightly" >> $GITHUB_OUTPUT
+                  else
+                    echo "publish_type=${{ inputs.publish_type }}" >> $GITHUB_OUTPUT
+                  fi
+
+            # For releases: parse the tag to get package name and version
+            # Tag format: <package-name>/v<version> (e.g. elasticsearch-plugin/v1.1.0)
+            # Pre-release versions are supported (e.g. elasticsearch-plugin/v1.1.0-rc.1)
+            - name: Parse release tag
+              id: parse_tag
+              if: github.event_name == 'release'
+              run: |
+                  TAG="${{ github.event.release.tag_name }}"
+                  PACKAGE_NAME="${TAG%/v*}"
+                  VERSION="${TAG#*/v}"
+                  echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+                  # Validate tag format (semver with optional pre-release suffix)
+                  if [[ ! "$TAG" =~ ^[a-z-]+/v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+                    echo "::error::Invalid tag format '$TAG'. Expected '<package-name>/v<semver>' (e.g. elasticsearch-plugin/v1.1.0 or elasticsearch-plugin/v1.1.0-rc.1)"
+                    exit 1
+                  fi
+
+                  # Determine npm dist-tag: pre-release versions get 'next', stable gets 'latest'
+                  if [[ "$VERSION" =~ - ]]; then
+                    echo "dist_tag=next" >> $GITHUB_OUTPUT
+                    echo "Releasing @vendure-community/$PACKAGE_NAME@$VERSION (pre-release → next tag)"
+                  else
+                    echo "dist_tag=latest" >> $GITHUB_OUTPUT
+                    echo "Releasing @vendure-community/$PACKAGE_NAME@$VERSION (stable → latest tag)"
+                  fi
+
     publish:
+        needs: setup
         runs-on: ubuntu-latest
         permissions:
-            contents: read
+            contents: write
             id-token: write
         steps:
-            - uses: actions/checkout@v4
-            - uses: actions/setup-node@v4
+            - name: Checkout
+              uses: actions/checkout@v4
               with:
-                  node-version: 20
-                  registry-url: 'https://registry.npmjs.org'
-            - run: npm ci
-            - run: npm run build
+                  fetch-depth: 0
 
-            # For pre-releases: auto-bump to timestamped pre-release versions in CI.
-            # These version changes are ephemeral — they are NOT committed back to the repo.
-            - name: Bump pre-release versions
-              if: inputs.dist-tag != 'latest'
+            # For nightly builds: check if there were commits in the last 25 hours
+            # (25h instead of 24h to account for cron schedule jitter)
+            - name: Check for new commits
+              id: commit_check
+              if: needs.setup.outputs.publish_type == 'nightly'
               run: |
-                  DATE=$(date +'%Y%m%d%H%M')
-                  TAG="${{ inputs.dist-tag }}"
-                  if [ "${{ inputs.package }}" = "all" ]; then
-                    SCOPE="--no-private"
+                  COMMITS=$(git rev-list --count --since="25 hours" HEAD)
+                  echo "Commits found in last 25h: $COMMITS"
+                  if [ "$COMMITS" -eq 0 ]; then
+                    echo "should_publish=false" >> $GITHUB_OUTPUT
                   else
-                    SCOPE="--scope @vendure-community/${{ inputs.package }}"
+                    echo "should_publish=true" >> $GITHUB_OUTPUT
                   fi
-                  export TAG DATE
+
+            - name: Skip publish (no new commits)
+              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'false'
+              run: echo "No new commits in last 25 hours – skipping nightly publish."
+
+            - name: Setup Node.js
+              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '24.x'
+                  registry-url: 'https://registry.npmjs.org'
+
+            - name: Update npm
+              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              run: npm install -g npm@11
+
+            - name: Install dependencies
+              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              run: npm ci
+
+            - name: Build
+              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              run: npm run build
+
+            - name: Configure Git
+              if: needs.setup.outputs.publish_type == 'release' || (needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true')
+              run: |
+                  git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git config --global user.name "github-actions[bot]"
+
+            # Release: bump version from tag, publish, commit back
+            - name: Bump version from tag
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  cd packages/${{ needs.setup.outputs.package_name }}
+                  npm version ${{ needs.setup.outputs.version }} --no-git-tag-version
+                  echo "Bumped to ${{ needs.setup.outputs.version }}"
+
+            - name: Validate package directory
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  if [ ! -d "packages/${{ needs.setup.outputs.package_name }}" ]; then
+                    echo "::error::Package directory 'packages/${{ needs.setup.outputs.package_name }}' not found"
+                    exit 1
+                  fi
+
+            - name: Publish to NPM (release)
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  cd packages/${{ needs.setup.outputs.package_name }}
+                  npm publish --access public --provenance --tag ${{ needs.setup.outputs.dist_tag }}
+
+            - name: Commit version bump
+              if: needs.setup.outputs.publish_type == 'release'
+              run: |
+                  git add packages/${{ needs.setup.outputs.package_name }}/package.json
+                  git commit -m "chore: release @vendure-community/${{ needs.setup.outputs.package_name }}@${{ needs.setup.outputs.version }}"
+                  git push origin HEAD:main
+
+            # Nightly: bump to timestamped pre-release, publish with dev tag
+            - name: Get current date
+              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
+              id: date
+              run: echo "date=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+
+            - name: Bump pre-release versions
+              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
+              run: |
+                  if [ "${{ inputs.package }}" != "" ] && [ "${{ inputs.package }}" != "all" ]; then
+                    SCOPE="--scope @vendure-community/${{ inputs.package }}"
+                  else
+                    SCOPE="--no-private"
+                  fi
                   npx lerna exec $SCOPE -- \
                     'NEW=$(node -p "const v=require(\"./package.json\").version.replace(/-.*/,\"\").split(\".\");v[2]++;v.join(\".\")") && \
-                     npm version "${NEW}-${TAG}.${DATE}" --no-git-tag-version'
+                     npm version "${NEW}-dev.${{ steps.date.outputs.date }}" --no-git-tag-version'
 
-            # Publish: single package or pre-release (all packages)
-            - name: Publish package(s)
-              if: inputs.package != 'all' || inputs.dist-tag != 'latest'
+            # The version bump is committed (but never pushed) so that npm provenance
+            # attestation links to a commit whose package.json matches the published version.
+            - name: Commit version changes (nightly)
+              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
               run: |
-                  if [ "${{ inputs.package }}" = "all" ]; then
-                    SCOPE="--no-private"
-                  else
+                  git add packages/*/package.json
+                  git commit -m "chore: Bump version for nightly pre-release"
+
+            - name: Publish to NPM (nightly)
+              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
+              run: |
+                  if [ "${{ inputs.package }}" != "" ] && [ "${{ inputs.package }}" != "all" ]; then
                     SCOPE="--scope @vendure-community/${{ inputs.package }}"
+                  else
+                    SCOPE="--no-private"
                   fi
-                  ARGS="--access public --tag ${{ inputs.dist-tag }}"
+                  ARGS="--access public --provenance --tag dev"
                   if [ "${{ inputs.dry-run }}" = "true" ]; then
                     ARGS="$ARGS --dry-run"
                   fi
                   npx lerna exec $SCOPE -- npm publish $ARGS
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-            # Publish: all packages, stable release.
-            # Uses lerna publish from-package which compares local versions to the npm
-            # registry and only publishes packages with unpublished versions.
-            - name: Publish all changed packages (stable)
-              if: inputs.package == 'all' && inputs.dist-tag == 'latest'
-              run: |
-                  ARGS="--yes"
-                  if [ "${{ inputs.dry-run }}" = "true" ]; then
-                    echo "=== DRY RUN ==="
-                    npx lerna changed || echo "No changed packages found"
-                    exit 0
-                  fi
-                  npx lerna publish from-package $ARGS
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

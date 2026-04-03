@@ -1,0 +1,8 @@
+{
+    "name": "@vendure-community/docs",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "@vendure-io/docs-provider": "^0.11.0"
+    }
+}

@@ -3,25 +3,36 @@
     "private": true,
     "workspaces": [
         "packages/*",
-        "dev-server"
+        "dev-server",
+        "docs"
     ],
     "scripts": {
         "build": "lerna run build",
         "test": "lerna run test",
         "e2e": "lerna run e2e",
-        "lint": "lerna run lint"
+        "lint": "lerna run lint",
+        "docs:generate": "tsx scripts/docs/generate-typescript-docs.ts",
+        "docs:compile-manifest": "tsx docs/scripts/compile-manifest.ts",
+        "docs:validate": "tsx docs/src/validate.ts"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.2",
+        "@gql.tada/cli-utils": "^1.6.5",
         "@swc/core": "^1.7.0",
+        "@types/fs-extra": "^11.0.4",
         "@typescript-eslint/eslint-plugin": "^8.54.0",
         "@typescript-eslint/parser": "^8.54.0",
+        "@vendure-io/docs-generator": "^0.1.0",
         "cross-env": "^7.0.3",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-import": "^2.32.0",
+        "fs-extra": "^11.0.0",
+        "gql.tada": "^1.8.10",
         "lerna": "^9.0.0",
         "rimraf": "^5.0.5",
+        "ts-node": "^10.9.0",
+        "tsx": "^4.21.0",
         "typescript": "5.8.2",
         "typescript-eslint": "^8.54.0",
         "unplugin-swc": "^1.5.0",

@@ -21,12 +21,13 @@
     "homepage": "https://www.vendure.io",
     "funding": "https://github.com/sponsors/michaelbromley",
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "provenance": true
     },
     "peerDependencies": {
         "@google-cloud/pubsub": ">=4.0.0",
-        "@vendure/common": ">=3.0.0",
-        "@vendure/core": ">=3.0.0"
+        "@vendure/common": "^3.6.0-0",
+        "@vendure/core": "^3.6.0-0"
     },
     "peerDependenciesMeta": {
         "@google-cloud/pubsub": {
@@ -36,9 +37,9 @@
     "devDependencies": {
         "@google-cloud/pubsub": "^4.11.0",
         "@nestjs/testing": "^11.1.13",
-        "@vendure/common": "^3.5.3",
-        "@vendure/core": "^3.5.3",
-        "@vendure/testing": "^3.5.3",
+        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "3.6.0-minor-202603280303",
+        "@vendure/testing": "3.6.0-minor-202603280303",
         "rimraf": "^5.0.5",
         "typescript": "5.8.2"
     }

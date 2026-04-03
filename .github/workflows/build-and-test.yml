@@ -14,10 +14,14 @@ jobs:
                 node-version: [20.x, 22.x]
         services:
             elasticsearch:
-                image: docker.elastic.co/elasticsearch/elasticsearch:7.10.2
+                image: docker.elastic.co/elasticsearch/elasticsearch:9.1.0
                 env:
                     discovery.type: single-node
                     bootstrap.memory_lock: 'true'
+                    xpack.security.enabled: 'false'
+                    xpack.security.http.ssl.enabled: 'false'
+                    xpack.security.transport.ssl.enabled: 'false'
+                    xpack.license.self_generated.type: basic
                     ES_JAVA_OPTS: '-Xms512m -Xmx512m'
                 ports:
                     - 9200:9200

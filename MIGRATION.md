@@ -7,7 +7,13 @@ These packages were extracted from the main [vendurehq/vendure](https://github.c
 + import { ElasticsearchPlugin } from '@vendure-community/elasticsearch-plugin';
 
 - import { StripePlugin } from '@vendure/payments-plugin/package/stripe';
-+ import { StripePlugin } from '@vendure-community/payments-plugin/package/stripe';
++ import { StripePlugin } from '@vendure-community/stripe-plugin';
+
+- import { MolliePlugin } from '@vendure/payments-plugin/package/mollie';
++ import { MolliePlugin } from '@vendure-community/mollie-plugin';
+
+- import { BraintreePlugin } from '@vendure/payments-plugin/package/braintree';
++ import { BraintreePlugin } from '@vendure-community/braintree-plugin';
 
 - import { SentryPlugin } from '@vendure/sentry-plugin';
 + import { SentryPlugin } from '@vendure-community/sentry-plugin';

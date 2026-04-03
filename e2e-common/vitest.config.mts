@@ -2,9 +2,21 @@ import path from 'path';
 import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
+// Scope test discovery to the current package when PACKAGE env var is set.
+// When run via `lerna run e2e`, cwd is the package directory (e2e/**/*.e2e-spec.ts).
+// When run from the repo root, we need the full path (packages/{pkg}/e2e/**/*.e2e-spec.ts).
+const pkg = process.env.PACKAGE;
+const isRepoRoot = process.cwd().endsWith('community-plugins') || !process.cwd().includes('/packages/');
+const includePattern = pkg && isRepoRoot
+    ? [`packages/${pkg}/e2e/**/*.e2e-spec.ts`]
+    : ['**/e2e/**/*.e2e-spec.ts'];
+
 export default defineConfig({
     test: {
-        include: ['**/*.e2e-spec.ts'],
+        include: includePattern,
+        // E2e tests share infrastructure (Elasticsearch indices, database state, ports)
+        // and must run sequentially to avoid interference between test files.
+        fileParallelism: false,
         /**
          * For local debugging of the e2e tests, we set a very long timeout value otherwise tests will
          * automatically fail for going over the 5 second default timeout.

@@ -3,6 +3,10 @@ import { HealthCheckError, HealthIndicator, HealthIndicatorResult } from '@nestj
 
 import { ElasticsearchService } from './elasticsearch.service';
 
+/**
+ * @deprecated Use infrastructure-level health checks instead of application-level health checks.
+ * This class will be removed in v4.0.0.
+ */
 @Injectable()
 export class ElasticsearchHealthIndicator extends HealthIndicator {
     constructor(private elasticsearchService: ElasticsearchService) {

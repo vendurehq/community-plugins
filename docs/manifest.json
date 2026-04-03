@@ -1,0 +1,143 @@
+{
+  "id": "community-plugins",
+  "name": "Community Plugins",
+  "version": "0.0.0",
+  "vendureVersion": "v3",
+  "navigation": [
+    {
+      "title": "BraintreePlugin",
+      "slug": "braintree-plugin",
+      "file": "docs/reference/braintree-plugin/index.mdx",
+      "children": [
+        {
+          "title": "BraintreePluginOptions",
+          "slug": "braintree-plugin-options",
+          "file": "docs/reference/braintree-plugin/braintree-plugin-options.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    },
+    {
+      "title": "ElasticsearchPlugin",
+      "slug": "elasticsearch-plugin",
+      "file": "docs/reference/elasticsearch-plugin/index.mdx",
+      "children": [
+        {
+          "title": "ElasticsearchOptions",
+          "slug": "elasticsearch-options",
+          "file": "docs/reference/elasticsearch-plugin/elasticsearch-options.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    },
+    {
+      "title": "MolliePlugin",
+      "slug": "mollie-plugin",
+      "file": "docs/reference/mollie-plugin/index.mdx",
+      "children": [
+        {
+          "title": "MolliePluginOptions",
+          "slug": "mollie-plugin-options",
+          "file": "docs/reference/mollie-plugin/mollie-plugin-options.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    },
+    {
+      "title": "PubSubPlugin",
+      "slug": "pub-sub-plugin",
+      "file": "docs/reference/pub-sub-plugin/index.mdx",
+      "children": [
+        {
+          "title": "PubSubJobQueueStrategy",
+          "slug": "pub-sub-job-queue-strategy",
+          "file": "docs/reference/pub-sub-plugin/pub-sub-job-queue-strategy.mdx",
+          "lastModified": "2026-04-01T17:48:09+02:00"
+        }
+      ],
+      "lastModified": "2026-04-01T17:46:34+02:00"
+    },
+    {
+      "title": "PunchOutGatewayPlugin",
+      "slug": "punch-out-gateway-plugin",
+      "file": "docs/reference/punch-out-gateway-plugin/index.mdx",
+      "children": [
+        {
+          "title": "PunchOutGatewayPluginOptions",
+          "slug": "punch-out-gateway-plugin-options",
+          "file": "docs/reference/punch-out-gateway-plugin/punch-out-gateway-plugin-options.mdx",
+          "lastModified": "2026-03-31T16:42:28+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    },
+    {
+      "title": "SentryPlugin",
+      "slug": "sentry-plugin",
+      "file": "docs/reference/sentry-plugin/index.mdx",
+      "children": [
+        {
+          "title": "SentryPluginOptions",
+          "slug": "sentry-plugin-options",
+          "file": "docs/reference/sentry-plugin/sentry-plugin-options.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        },
+        {
+          "title": "SentryService",
+          "slug": "sentry-service",
+          "file": "docs/reference/sentry-plugin/sentry-service.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    },
+    {
+      "title": "StellatePlugin",
+      "slug": "stellate-plugin",
+      "file": "docs/reference/stellate-plugin/index.mdx",
+      "children": [
+        {
+          "title": "PurgeRule",
+          "slug": "purge-rule",
+          "file": "docs/reference/stellate-plugin/purge-rule.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        },
+        {
+          "title": "StellatePluginOptions",
+          "slug": "stellate-plugin-options",
+          "file": "docs/reference/stellate-plugin/stellate-plugin-options.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        },
+        {
+          "title": "StellateService",
+          "slug": "stellate-service",
+          "file": "docs/reference/stellate-plugin/stellate-service.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    },
+    {
+      "title": "StripePlugin",
+      "slug": "stripe-plugin",
+      "file": "docs/reference/stripe-plugin/index.mdx",
+      "children": [
+        {
+          "title": "StripePluginOptions",
+          "slug": "stripe-plugin-options",
+          "file": "docs/reference/stripe-plugin/stripe-plugin-options.mdx",
+          "lastModified": "2026-03-31T14:38:46+02:00"
+        }
+      ],
+      "lastModified": "2026-04-03T11:40:19+02:00"
+    }
+  ],
+  "github": {
+    "repository": "vendurehq/community-plugins",
+    "branch": "main",
+    "docsPath": "docs"
+  }
+}
