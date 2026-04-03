@@ -3,15 +3,15 @@
     "version": "1.0.0",
     "description": "Vendure plugin for Meilisearch-powered product search with AI hybrid search support",
     "license": "GPL-3.0-or-later",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "lib/index.js",
+    "types": "lib/index.d.ts",
     "files": [
-        "dist/**/*"
+        "lib/**/*"
     ],
     "exports": {
         ".": {
-            "types": "./dist/index.d.ts",
-            "default": "./dist/index.js"
+            "types": "./lib/index.d.ts",
+            "default": "./lib/index.js"
         }
     },
     "repository": {
@@ -21,7 +21,7 @@
     },
     "scripts": {
         "watch": "tsc -p ./tsconfig.build.json --watch",
-        "build": "rimraf dist && tsc -p ./tsconfig.build.json",
+        "build": "rimraf lib && tsc -p ./tsconfig.build.json",
         "lint": "eslint ."
     },
     "keywords": [
@@ -32,19 +32,22 @@
         "full-text-search",
         "ai-search"
     ],
-    "homepage": "https://www.vendure.io",
+    "homepage": "https://www.vendure.io/",
     "funding": "https://github.com/sponsors/michaelbromley",
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "provenance": true
     },
     "peerDependencies": {
-        "@vendure/core": ">=3.0.0",
-        "@vendure/common": ">=3.0.0"
+        "@vendure/core": "^3.6.0-0",
+        "@vendure/common": "^3.6.0-0"
     },
     "devDependencies": {
-        "@vendure/common": "^3.5.3",
-        "@vendure/core": "^3.5.3",
-        "@vendure/testing": "^3.5.3"
+        "@vendure/common": "3.6.0-minor-202603280303",
+        "@vendure/core": "3.6.0-minor-202603280303",
+        "@vendure/testing": "3.6.0-minor-202603280303",
+        "rimraf": "^5.0.5",
+        "typescript": "5.8.2"
     },
     "dependencies": {
         "meilisearch": "^0.55.0",

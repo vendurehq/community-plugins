@@ -33,6 +33,18 @@
       "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
+      "title": "MeilisearchPlugin",
+      "slug": "meilisearch-plugin",
+      "file": "docs/reference/meilisearch-plugin/index.mdx",
+      "children": [
+        {
+          "title": "MeilisearchOptions",
+          "slug": "meilisearch-options",
+          "file": "docs/reference/meilisearch-plugin/meilisearch-options.mdx"
+        }
+      ]
+    },
+    {
       "title": "MolliePlugin",
       "slug": "mollie-plugin",
       "file": "docs/reference/mollie-plugin/index.mdx",
@@ -92,7 +104,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-05-06T10:08:17+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "StellatePlugin",
@@ -118,7 +130,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-05-06T10:08:17+02:00"
+      "lastModified": "2026-04-03T11:44:49+02:00"
     },
     {
       "title": "StripePlugin",
