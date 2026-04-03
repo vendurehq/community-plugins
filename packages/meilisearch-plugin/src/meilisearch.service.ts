@@ -210,7 +210,27 @@ export class MeilisearchService implements OnModuleInit {
             : searchParams;
 
         try {
-            const result = await index.search(input.term || '', finalParams);
+            let result;
+            try {
+                result = await index.search(input.term || '', finalParams);
+            } catch (searchError: any) {
+                // During a reindex, the swap temporarily leaves the primary index without
+                // embedder settings. If a search arrives in that brief window with hybrid
+                // params, Meilisearch will reject it. We gracefully fall back to a standard
+                // keyword search so the user still gets results instead of an error.
+                // The embedder settings are restored once the reindex swap fully completes
+                // and subsequent searches will use AI/hybrid search again automatically.
+                // its a strange behaviour i am facing for this (in rare cases) -> tried with rename: true in indexer.controller.ts but it didn't work.
+                // so that whole settings and documents are updated . no luck
+                // Will try to fix this in later pr
+                if (searchError.message?.includes('Cannot find embedder') && finalParams.hybrid) {
+                    Logger.verbose('Embedder not available, falling back to keyword search', loggerCtx);
+                    const { hybrid, ...paramsWithoutHybrid } = finalParams;
+                    result = await index.search(input.term || '', paramsWithoutHybrid);
+                } else {
+                    throw searchError;
+                }
+            }
             await this.eventBus.publish(new SearchEvent(ctx, input));
 
             if (groupByProduct || groupBySKU) {
@@ -256,6 +276,12 @@ export class MeilisearchService implements OnModuleInit {
             };
             try {
                 const result = await index.search(input.term || '', searchParams);
+                // Use facetDistribution to get the exact distinct count
+                // because estimatedTotalHits is inaccurate with distinct + limit:0
+                const facetDist = (result as any).facetDistribution?.[distinctField];
+                if (facetDist) {
+                    return Object.keys(facetDist).length;
+                }
                 return (result as any).estimatedTotalHits || (result as any).totalHits || 0;
             } catch (e: any) {
                 Logger.error(e.message, loggerCtx, e.stack);
@@ -284,14 +310,21 @@ export class MeilisearchService implements OnModuleInit {
         const filter = this.buildFilter(ctx, input, enabledOnly);
 
         try {
-            const result = await index.search(input.term || '', {
+            const { groupByProduct } = input;
+            // When grouped by product, use productFacetValueIds to get per-product counts
+            const facetField = groupByProduct ? 'productFacetValueIds' : 'facetValueIds';
+            const searchParams: any = {
                 filter,
                 offset: 0,
                 limit: 0,
-                facets: ['facetValueIds'],
-            });
+                facets: [facetField],
+            };
+            if (groupByProduct) {
+                searchParams.distinct = 'productId';
+            }
+            const result = await index.search(input.term || '', searchParams);
 
-            const facetDistribution = result.facetDistribution?.facetValueIds || {};
+            const facetDistribution = result.facetDistribution?.[facetField] || {};
             const facetValueIds = Object.keys(facetDistribution).slice(
                 0,
                 this.options.searchConfig.facetValueMaxSize,
@@ -325,14 +358,21 @@ export class MeilisearchService implements OnModuleInit {
         const filter = this.buildFilter(ctx, input, enabledOnly);
 
         try {
-            const result = await index.search(input.term || '', {
+            const { groupByProduct } = input;
+            // When grouped by product, use productCollectionIds to get per-product counts
+            const collectionField = groupByProduct ? 'productCollectionIds' : 'collectionIds';
+            const searchParams: any = {
                 filter,
                 offset: 0,
                 limit: 0,
-                facets: ['collectionIds'],
-            });
+                facets: [collectionField],
+            };
+            if (groupByProduct) {
+                searchParams.distinct = 'productId';
+            }
+            const result = await index.search(input.term || '', searchParams);
 
-            const collectionDistribution = result.facetDistribution?.collectionIds || {};
+            const collectionDistribution = result.facetDistribution?.[collectionField] || {};
             const collectionIds = Object.keys(collectionDistribution).slice(
                 0,
                 this.options.searchConfig.collectionMaxSize,
@@ -556,8 +596,20 @@ export class MeilisearchService implements OnModuleInit {
         if (collectionId) {
             filterParts.push(`collectionIds = "${collectionId}"`);
         }
+        const collectionIds = input.collectionIds as string[] | undefined;
+        if (collectionIds && collectionIds.length) {
+            const uniqueIds = Array.from(new Set(collectionIds));
+            const orParts = uniqueIds.map(id => `collectionIds = "${id}"`);
+            filterParts.push(`(${orParts.join(' OR ')})`);
+        }
         if (collectionSlug) {
             filterParts.push(`collectionSlugs = "${collectionSlug}"`);
+        }
+        const collectionSlugs = input.collectionSlugs as string[] | undefined;
+        if (collectionSlugs && collectionSlugs.length) {
+            const uniqueSlugs = Array.from(new Set(collectionSlugs));
+            const orParts = uniqueSlugs.map(slug => `collectionSlugs = "${slug}"`);
+            filterParts.push(`(${orParts.join(' OR ')})`);
         }
 
         if (priceRange) {

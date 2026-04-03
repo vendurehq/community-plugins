@@ -280,20 +280,16 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
                     Logger.verbose(`Done ${finishedProductsCount} / ${totalProductIds} products`);
                 } while (productIds.length >= this.options.reindexProductsChunkSize);
 
-                // Atomically swap the temporary index with the primary index
+                // Atomically swap the temporary index with the primary index.
+                // The standard swap (without `rename`) exchanges documents, settings,
+                // and task history between the two indexes. This preserves all index
+                // configuration including AI embedder settings.
                 try {
                     // Ensure the primary index exists before swapping
                     await createIndex(this.client, primaryIndexUid, 'id');
 
-                    // NOTE: `rename` was added in meilisearch SDK v0.53+, but those versions
-                    // are ESM-only ("type": "module") which breaks ts-node/CJS projects.
-                    // We use SDK v0.46 (last CJS build) and cast to `any` here.
-                    // The Meilisearch server (v1.31+) still accepts `rename` at runtime.
-                    // Will switch to new sdk later as i need to actively test this and make changes in dev mode for now 
-                    
-                    // bump the SDK version.
-                    const swapTask = await this.client.swapIndexes([
-                        { indexes: [tempIndexUid, primaryIndexUid], rename: false } as any,
+                    const swapTask = await (this.client as any).swapIndexes([
+                        { indexes: [tempIndexUid, primaryIndexUid] },
                     ]);
                     await this.client.tasks.waitForTask(swapTask.taskUid);
 
