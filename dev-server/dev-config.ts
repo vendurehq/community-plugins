@@ -22,6 +22,7 @@ import { DataSourceOptions } from 'typeorm';
 // import { SentryPlugin } from '../packages/sentry-plugin/src/sentry-plugin';
 // import { StellatePlugin } from '../packages/stellate-plugin/src/stellate-plugin';
 // import { PubSubPlugin } from '../packages/pub-sub-plugin/src/plugin';
+// import { MeilisearchPlugin } from '../packages/meilisearch-plugin/src/plugin';
 // import { PunchOutGatewayPlugin } from '../packages/punchout-gateway-plugin/src/punchout-gateway-plugin';
 
 /**
@@ -71,6 +72,11 @@ export const devConfig: VendureConfig = {
             assetUploadDir: path.join(__dirname, 'assets'),
         }),
         DefaultSearchPlugin.init({ bufferUpdates: false, indexStockStatus: false }),
+        // To use MeilisearchPlugin, comment out DefaultSearchPlugin above and uncomment below:
+        // MeilisearchPlugin.init({
+        //     host: process.env.MEILISEARCH_HOST || 'http://localhost:7700',
+        //     apiKey: process.env.MEILISEARCH_API_KEY || '',
+        // }),
         DefaultJobQueuePlugin.init({}),
 
         // --- Community plugins ---
