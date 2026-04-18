@@ -19,6 +19,26 @@ services:
             - esdata:/usr/share/elasticsearch/data
         ports:
             - 9200:9200
+    opensearch:
+        image: opensearchproject/opensearch:3.0.0
+        environment:
+            - cluster.name=opensearch-docker-cluster
+            - node.name=os
+            - discovery.type=single-node
+            - bootstrap.memory_lock=true
+            - 'OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m'
+            - 'DISABLE_SECURITY_PLUGIN=true'
+            - 'DISABLE_INSTALL_DEMO_CONFIG=true'
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        volumes:
+            - osdata:/usr/share/opensearch/data
+        ports:
+            # Host port 9201 -> container 9200 so it can run side-by-side with
+            # the elasticsearch service. Override via E2E_OPENSEARCH_PORT for e2e tests.
+            - 9201:9200
     redis:
         image: redis:7.2-alpine
         hostname: redis
@@ -27,4 +47,6 @@ services:
             - '6379:6379'
 volumes:
     esdata:
+        driver: local
+    osdata:
         driver: local
