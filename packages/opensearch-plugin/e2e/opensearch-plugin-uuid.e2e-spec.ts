@@ -1,0 +1,125 @@
+import { DefaultJobQueuePlugin, mergeConfig, UuidIdStrategy } from '@vendure/core';
+import { createTestEnvironment } from '@vendure/testing';
+import path from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { initialData } from '../../../e2e-common/e2e-initial-data';
+import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
+import { searchProductsShopDocument } from './graphql/shop-definitions';
+import { awaitRunningJobs } from './await-running-jobs';
+import { OpenSearchPlugin } from '../src/plugin';
+
+import { graphql } from './graphql/graphql-admin';
+import { graphql as shopGraphql } from './graphql/graphql-shop';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { opensearchHost, opensearchPort } = require('./constants');
+
+// https://github.com/vendurehq/vendure/issues/494
+describe('OpenSearch plugin with UuidIdStrategy', () => {
+    const { server, adminClient, shopClient } = createTestEnvironment(
+        mergeConfig(testConfig(), {
+            entityOptions: { entityIdStrategy: new UuidIdStrategy() },
+            // logger: new DefaultLogger({ level: LogLevel.Info }),
+            plugins: [
+                OpenSearchPlugin.init({
+                    indexPrefix: 'e2e-uuid-tests',
+                    port: opensearchPort,
+                    host: opensearchHost,
+                }),
+                DefaultJobQueuePlugin,
+            ],
+        }),
+    );
+
+    beforeAll(async () => {
+        await server.init({
+            initialData,
+            productsCsvPath: path.join(__dirname, 'fixtures/e2e-products-full.csv'),
+            customerCount: 1,
+        });
+        await adminClient.asSuperAdmin();
+        // We have extra time here because a lot of jobs are
+        // triggered from all the product updates
+        await awaitRunningJobs(adminClient, 10_000, 1000);
+        await adminClient.query(reindexDocument);
+        await awaitRunningJobs(adminClient);
+    }, TEST_SETUP_TIMEOUT_MS);
+
+    afterAll(async () => {
+        await server.destroy();
+    });
+
+    it('no term or filters', async () => {
+        const { search } = await shopClient.query(searchProductsShopDocument, {
+            input: {
+                groupByProduct: true,
+            },
+        });
+        expect(search.totalItems).toBe(21);
+    });
+
+    it('no term or filters grouped by SKU', async () => {
+        const { search } = await shopClient.query(searchProductsShopDocument, {
+            input: {
+                groupBySKU: true,
+            },
+        } as any);
+        expect(search.totalItems).toBe(34);
+    });
+
+    it('with search term', async () => {
+        const { search } = await shopClient.query(searchProductsShopDocument, {
+            input: {
+                groupByProduct: true,
+                term: 'laptop',
+            },
+        });
+        expect(search.totalItems).toBe(1);
+    });
+
+    it('with search term grouped by SKU', async () => {
+        const { search } = await shopClient.query(searchProductsShopDocument, {
+            input: {
+                groupBySKU: true,
+                term: 'bonsai',
+            },
+        });
+        expect(search.totalItems).toBe(1);
+    });
+
+    it('with collectionId filter term', async () => {
+        const { collections } = await shopClient.query(getCollectionListDocument);
+        const { search } = await shopClient.query(searchProductsShopDocument, {
+            input: {
+                groupByProduct: true,
+                collectionId: collections.items[0].id,
+            },
+        });
+        expect(search.items).not.toEqual([]);
+    });
+});
+
+const reindexDocument = graphql(`
+    mutation Reindex {
+        reindex {
+            id
+            queueName
+            state
+            progress
+            duration
+            result
+        }
+    }
+`);
+
+const getCollectionListDocument = shopGraphql(`
+    query GetCollectionList {
+        collections {
+            items {
+                id
+                name
+            }
+        }
+    }
+`);

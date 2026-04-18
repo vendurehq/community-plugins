@@ -16,6 +16,7 @@ import { DataSourceOptions } from 'typeorm';
 // Uncomment the plugins you want to work on:
 
 // import { ElasticsearchPlugin } from '../packages/elasticsearch-plugin/src/plugin';
+// import { OpenSearchPlugin } from '../packages/opensearch-plugin/src/plugin';
 // import { StripePlugin } from '../packages/stripe-plugin/src/stripe.plugin';
 // import { MolliePlugin } from '../packages/mollie-plugin/src/mollie.plugin';
 // import { BraintreePlugin } from '../packages/braintree-plugin/src/braintree.plugin';
@@ -79,6 +80,13 @@ export const devConfig: VendureConfig = {
         // ElasticsearchPlugin.init({
         //     host: 'http://localhost',
         //     port: 9200,
+        // }),
+
+        // OpenSearchPlugin.init({
+        //     host: 'http://localhost',
+        //     // docker-compose maps OpenSearch to host port 9201 so it can run
+        //     // alongside the elasticsearch service.
+        //     port: 9201,
         // }),
 
         // StripePlugin.init({
