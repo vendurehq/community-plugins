@@ -439,11 +439,11 @@ export class OpenSearchService implements OnModuleInit, OnModuleDestroy {
 
         let body;
         try {
-            const result = await this.client.search<SearchResponseBody<VariantIndexItem>>({
+            const result = await this.client.search({
                 index: indexPrefix + VARIANT_INDEX_NAME,
                 body: opensearchBody,
             });
-            body = result.body;
+            body = result.body as unknown as SearchResponseBody<VariantIndexItem>;
         } catch (e: any) {
             Logger.error(e.message, loggerCtx, e.stack);
             throw e;

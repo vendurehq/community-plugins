@@ -388,8 +388,12 @@ export class OpenSearchIndexerController implements OnModuleInit, OnModuleDestro
             },
         });
 
-        if (result1.body.failures) {
-            for (const failure of result1.body.failures) {
+        // The OpenSearch client narrows updateByQuery response bodies to a union
+        // that includes the async-task variant (`{ task?: string }`) which does
+        // not carry the sync `failures` array. Cast to `any` to access it.
+        const body1 = result1.body as any;
+        if (body1.failures) {
+            for (const failure of body1.failures) {
                 Logger.error(`${failure.cause.type}: ${failure.cause.reason as string}`, loggerCtx);
             }
         }
@@ -406,14 +410,15 @@ export class OpenSearchIndexerController implements OnModuleInit, OnModuleDestro
             },
         });
 
-        if (result2.body.failures) {
-            for (const failure of result2.body.failures) {
+        const body2 = result2.body as any;
+        if (body2.failures) {
+            for (const failure of body2.failures) {
                 Logger.error(`${failure.cause.type}: ${failure.cause.reason as string}`, loggerCtx);
             }
         }
 
-        const failures1 = result1.body.failures ?? [];
-        const failures2 = result2.body.failures ?? [];
+        const failures1 = body1.failures ?? [];
+        const failures2 = body2.failures ?? [];
         return failures1.length === 0 && failures2.length === 0;
     }
 
