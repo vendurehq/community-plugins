@@ -12,7 +12,7 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 ### BREAKING CHANGES
 
-* **elasticsearch-plugin:** `ElasticsearchPlugin.init({ host, port, clientOptions })` is replaced with `ElasticsearchPlugin.init({ adapter })`. Wrap existing configuration with `createElasticsearchAdapter({ host, port, clientOptions })` to preserve previous behaviour. See the README "Migrating from v1.x" section for a worked example.
+* **elasticsearch-plugin:** `ElasticsearchPlugin.init({ host, port, clientOptions })` is replaced with `ElasticsearchPlugin.init({ adapter: () => SearchClientAdapter })`. The `adapter` option now takes a **factory** that produces a fresh `SearchClientAdapter` each time the plugin invokes it. The read-side service and the write-side indexer controller each call the factory in their own `onModuleInit`, so each owns an independent client & connection pool — sharing a single instance would tear the client down twice during `onModuleDestroy` and starve the other provider. Wrap existing configuration with `() => createElasticsearchAdapter({ host, port, clientOptions })` to preserve previous behaviour. See the README "Migrating from v1.x" section for a worked example.
 * **elasticsearch-plugin:** bumps minimum Elasticsearch server/client to `9.1.0` to align with Vendure `3.6.0`'s [minimum Elasticsearch requirement](https://github.com/vendurehq/vendure/releases/tag/v3.6.0).
 
 ## 1.1.0

@@ -74,13 +74,16 @@ import { ElasticsearchPlugin, createElasticsearchAdapter } from '@vendure-commun
 const config: VendureConfig = {
   plugins: [
     ElasticsearchPlugin.init({
-      adapter: createElasticsearchAdapter({
-        host: 'http://localhost',
-        port: 9200,
-        // Any additional @elastic/elasticsearch ClientOptions
-        // (auth, tls, cloud, headers, etc.) may be provided via `clientOptions`.
-        // clientOptions: { auth: { username: 'elastic', password: 'changeme' } },
-      }),
+      // `adapter` is a factory: the plugin invokes it once per internal
+      // NestJS provider so each gets its own client / connection pool.
+      adapter: () =>
+        createElasticsearchAdapter({
+          host: 'http://localhost',
+          port: 9200,
+          // Any additional @elastic/elasticsearch ClientOptions
+          // (auth, tls, cloud, headers, etc.) may be provided via `clientOptions`.
+          // clientOptions: { auth: { username: 'elastic', password: 'changeme' } },
+        }),
       indexPrefix: 'vendure-',
     }),
   ],
@@ -95,12 +98,13 @@ import { ElasticsearchPlugin, createOpenSearchAdapter } from '@vendure-community
 const config: VendureConfig = {
   plugins: [
     ElasticsearchPlugin.init({
-      adapter: createOpenSearchAdapter({
-        host: 'http://localhost',
-        port: 9200,
-        // Any additional @opensearch-project/opensearch ClientOptions
-        // (auth, ssl, awssigv4, headers, etc.) may be provided via `clientOptions`.
-      }),
+      adapter: () =>
+        createOpenSearchAdapter({
+          host: 'http://localhost',
+          port: 9200,
+          // Any additional @opensearch-project/opensearch ClientOptions
+          // (auth, ssl, awssigv4, headers, etc.) may be provided via `clientOptions`.
+        }),
       indexPrefix: 'vendure-',
     }),
   ],
@@ -119,7 +123,10 @@ import { ElasticsearchPlugin, SearchClientAdapter } from '@vendure-community/ela
 class MyCustomAdapter implements SearchClientAdapter { /* ... */ }
 
 ElasticsearchPlugin.init({
-  adapter: new MyCustomAdapter(),
+  // Return a fresh instance per call — the plugin invokes the factory once
+  // per internal provider, so sharing a single instance would tear the
+  // underlying client down twice and starve the other provider.
+  adapter: () => new MyCustomAdapter(),
 });
 ```
 
@@ -147,12 +154,17 @@ ElasticsearchPlugin.init({
 
 ```ts
 ElasticsearchPlugin.init({
-  adapter: createElasticsearchAdapter({
-    host: 'http://localhost',
-    port: 9200,
-  }),
+  adapter: () =>
+    createElasticsearchAdapter({
+      host: 'http://localhost',
+      port: 9200,
+    }),
 });
 ```
+
+Note the arrow: `adapter` accepts a **factory** that produces a
+`SearchClientAdapter`, not an adapter instance directly. The plugin calls
+the factory once per internal provider so each owns its own client.
 
 The `clientOptions` property that previously lived at the top level of
 `ElasticsearchOptions` now lives on the adapter factory options and is passed

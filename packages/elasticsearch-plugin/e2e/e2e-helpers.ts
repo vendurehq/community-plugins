@@ -363,7 +363,9 @@ export async function testPriceRanges(client: SimpleGraphQLClient) {
 }
 
 export async function dropElasticIndices(indexPrefix: string) {
-    const adapter = buildAdapterForBackend();
+    // The helper now hands out a factory (same shape the plugin takes at
+    // init()); build a throw-away adapter for this one-off cleanup.
+    const adapter = buildAdapterForBackend()();
     try {
         await deleteIndices(adapter, indexPrefix);
     } finally {

@@ -233,12 +233,13 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
 
     /**
      * Returns a human-readable label identifying the configured search
-     * backend, purely for logging. The adapter is a black box to the plugin
-     * (it could be an in-memory mock in tests), so we just report the
-     * adapter's class name when available.
+     * backend, purely for logging. Delegated to the service because the
+     * plugin options now hold an adapter **factory** rather than an
+     * instance, and inspecting the factory 's `.name` only gives us the
+     * wrapping arrow — whereas the service has already called the factory
+     * and can report the concrete adapter class name.
      */
     private backendLabel(): string {
-        const adapter: any = ElasticsearchPlugin.options.adapter;
-        return adapter?.constructor?.name ?? 'SearchClientAdapter';
+        return this.elasticsearchService.getBackendLabel();
     }
 }

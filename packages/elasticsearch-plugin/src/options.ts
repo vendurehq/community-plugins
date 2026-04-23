@@ -30,16 +30,31 @@ import {
 export interface ElasticsearchOptions {
     /**
      * @description
-     * The search backend adapter driving this plugin instance. Use
-     * {@link createElasticsearchAdapter} or {@link createOpenSearchAdapter}
-     * to construct one, or pass your own implementation of
-     * {@link SearchClientAdapter} (e.g. a mock in tests).
+     * Factory that produces a {@link SearchClientAdapter} on demand.
+     *
+     * The plugin invokes this factory **once per NestJS provider** that
+     * needs a search backend — currently the read-side `ElasticsearchService`
+     * and the write-side `ElasticsearchIndexerController`. Each provider
+     * therefore owns an independent client / connection pool, so tearing
+     * one down during `onModuleDestroy` cannot starve in-flight requests
+     * on the other. A single shared instance would be torn down twice and
+     * take both providers offline; hence the factory shape.
+     *
+     * The typical call site is a thin arrow wrapping one of the first-party
+     * factories, e.g.:
+     *
+     * @example
+     * ```ts
+     * ElasticsearchPlugin.init({
+     *   adapter: () => createElasticsearchAdapter({ host, port }),
+     * });
+     * ```
      *
      * Backend-specific configuration (host, port, auth, AWS SigV4, etc.)
-     * lives on the factory, so swapping backends only touches the factory
-     * call and none of the shared plugin options below.
+     * lives on the inner factory, so swapping backends only touches the
+     * factory call and none of the shared plugin options below.
      */
-    adapter: SearchClientAdapter;
+    adapter: () => SearchClientAdapter;
     /**
      * @description
      * Maximum amount of attempts made to connect to the search server on
@@ -704,14 +719,14 @@ export interface BoostFieldsConfig {
 }
 
 export type ElasticsearchRuntimeOptions = DeepRequired<Omit<ElasticsearchOptions, 'adapter'>> & {
-    adapter: SearchClientAdapter;
+    adapter: () => SearchClientAdapter;
 };
 
-// A sentinel adapter placeholder; real instances are required from the
-// plugin consumer via the `adapter` option, so the defaults tree just needs
-// *some* value of the right type for the deepmerge to work. It is always
-// overwritten by the user-supplied adapter in `mergeWithDefaults`.
-const ADAPTER_PLACEHOLDER = {} as unknown as SearchClientAdapter;
+// A sentinel adapter-factory placeholder; real factories are required from
+// the plugin consumer via the `adapter` option, so the defaults tree just
+// needs *some* value of the right type for the deepmerge to work. It is
+// always overwritten by the user-supplied factory in `mergeWithDefaults`.
+const ADAPTER_PLACEHOLDER: () => SearchClientAdapter = () => ({}) as unknown as SearchClientAdapter;
 
 export const defaultOptions: ElasticsearchRuntimeOptions = {
     adapter: ADAPTER_PLACEHOLDER,

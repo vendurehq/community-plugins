@@ -96,7 +96,11 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
     ) {}
 
     onModuleInit(): any {
-        this.adapter = this.options.adapter;
+        // Build our own adapter instance from the factory. ElasticsearchService
+        // does the same independently, so this controller and the read-side
+        // service each own a separate client & connection pool — tearing one
+        // down during `onModuleDestroy` does not drain the other.
+        this.adapter = this.options.adapter();
         this.productRelations = this.getReindexRelations(
             defaultProductRelations,
             this.options.hydrateProductRelations,

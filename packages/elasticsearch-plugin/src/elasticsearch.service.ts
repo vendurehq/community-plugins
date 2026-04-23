@@ -54,11 +54,23 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
     }
 
     onModuleInit(): any {
-        this.adapter = this.options.adapter;
+        // Build our own adapter instance from the factory. The indexer
+        // controller does the same independently, giving each provider
+        // its own client & connection pool — see ElasticsearchOptions.adapter.
+        this.adapter = this.options.adapter();
     }
 
     onModuleDestroy(): any {
         return this.adapter.close();
+    }
+
+    /**
+     * Human-readable label for the configured backend. Used by the plugin
+     * for startup logs; kept on the service because this is the one place
+     * that actually holds an instantiated adapter.
+     */
+    getBackendLabel(): string {
+        return this.adapter?.constructor?.name ?? "SearchClientAdapter";
     }
 
     async checkConnection(): Promise<void> {
