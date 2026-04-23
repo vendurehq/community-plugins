@@ -1,4 +1,4 @@
-import { ClientOptions } from '@elastic/elasticsearch';
+import type { SearchClientAdapter } from './adapter';
 import {
     DeepRequired,
     EntityRelationPaths,
@@ -30,40 +30,32 @@ import {
 export interface ElasticsearchOptions {
     /**
      * @description
-     * The host of the Elasticsearch server. May also be specified in `clientOptions.node`.
+     * The search backend adapter driving this plugin instance. Use
+     * {@link createElasticsearchAdapter} or {@link createOpenSearchAdapter}
+     * to construct one, or pass your own implementation of
+     * {@link SearchClientAdapter} (e.g. a mock in tests).
      *
-     * @default 'http://localhost'
+     * Backend-specific configuration (host, port, auth, AWS SigV4, etc.)
+     * lives on the factory, so swapping backends only touches the factory
+     * call and none of the shared plugin options below.
      */
-    host?: string;
+    adapter: SearchClientAdapter;
     /**
      * @description
-     * The port of the Elasticsearch server. May also be specified in `clientOptions.node`.
-     *
-     * @default 9200
-     */
-    port?: number;
-    /**
-     * @description
-     * Maximum amount of attempts made to connect to the ElasticSearch server on startup.
+     * Maximum amount of attempts made to connect to the search server on
+     * startup.
      *
      * @default 10
      */
     connectionAttempts?: number;
     /**
      * @description
-     * Interval in milliseconds between attempts to connect to the ElasticSearch server on startup.
+     * Interval in milliseconds between attempts to connect to the search
+     * server on startup.
      *
      * @default 5000
      */
     connectionAttemptInterval?: number;
-    /**
-     * @description
-     * Options to pass directly to the
-     * [Elasticsearch Node.js client](https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/index.html). For example, to
-     * set authentication or other more advanced options.
-     * Note that if the `node` or `nodes` option is specified, it will override the values provided in the `host` and `port` options.
-     */
-    clientOptions?: ClientOptions;
     /**
      * @description
      * Prefix for the indices created by the plugin.
@@ -711,13 +703,18 @@ export interface BoostFieldsConfig {
     sku?: number;
 }
 
-export type ElasticsearchRuntimeOptions = DeepRequired<Omit<ElasticsearchOptions, 'clientOptions'>> & {
-    clientOptions?: ClientOptions;
+export type ElasticsearchRuntimeOptions = DeepRequired<Omit<ElasticsearchOptions, 'adapter'>> & {
+    adapter: SearchClientAdapter;
 };
 
+// A sentinel adapter placeholder; real instances are required from the
+// plugin consumer via the `adapter` option, so the defaults tree just needs
+// *some* value of the right type for the deepmerge to work. It is always
+// overwritten by the user-supplied adapter in `mergeWithDefaults`.
+const ADAPTER_PLACEHOLDER = {} as unknown as SearchClientAdapter;
+
 export const defaultOptions: ElasticsearchRuntimeOptions = {
-    host: 'http://localhost',
-    port: 9200,
+    adapter: ADAPTER_PLACEHOLDER,
     connectionAttempts: 10,
     connectionAttemptInterval: 5000,
     indexPrefix: 'vendure-',
@@ -751,7 +748,15 @@ export const defaultOptions: ElasticsearchRuntimeOptions = {
 };
 
 export function mergeWithDefaults(userOptions: ElasticsearchOptions): ElasticsearchRuntimeOptions {
-    const { clientOptions, ...pluginOptions } = userOptions;
+    if (!userOptions.adapter) {
+        throw new Error(
+            'ElasticsearchPlugin.init requires an `adapter` option. ' +
+                'Use createElasticsearchAdapter() or createOpenSearchAdapter() to build one.',
+        );
+    }
+    const { adapter, ...pluginOptions } = userOptions;
     const merged = deepmerge(defaultOptions, pluginOptions) as ElasticsearchRuntimeOptions;
-    return { ...merged, clientOptions };
+    // deepmerge would descend into the adapter instance; we want to carry the
+    // *original* adapter reference through untouched.
+    return { ...merged, adapter };
 }

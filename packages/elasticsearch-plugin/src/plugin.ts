@@ -1,4 +1,3 @@
-import { NodeOptions } from '@elastic/elasticsearch';
 import { OnApplicationBootstrap } from '@nestjs/common';
 import {
     AssetEvent,
@@ -58,10 +57,16 @@ function getCustomResolvers(options: ElasticsearchRuntimeOptions) {
 
 /**
  * @description
- * This plugin allows your product search to be powered by [Elasticsearch](https://github.com/elastic/elasticsearch) — a powerful open source search
- * engine. This is a drop-in replacement for the DefaultSearchPlugin which exposes many powerful configuration options enabling your storefront
- * to support a wide range of use-cases such as indexing of custom properties, fine control over search index configuration, and to leverage
- * advanced Elasticsearch features like spacial search.
+ * This plugin powers your product search via a pluggable search backend. It
+ * ships with ready-made adapters for
+ * [Elasticsearch](https://github.com/elastic/elasticsearch) and
+ * [OpenSearch](https://github.com/opensearch-project/OpenSearch), and lets
+ * you provide your own adapter by implementing
+ * {@link SearchClientAdapter}. This is a drop-in replacement for the
+ * DefaultSearchPlugin which exposes many powerful configuration options
+ * enabling your storefront to support a wide range of use-cases such as
+ * indexing of custom properties, fine control over search index
+ * configuration, and advanced features like spatial search.
  *
  * @docsCategory ElasticsearchPlugin
  */
@@ -121,15 +126,15 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
 
     /** @internal */
     async onApplicationBootstrap(): Promise<void> {
-        const nodeName = this.nodeName();
+        const backendLabel = this.backendLabel();
         try {
             await this.elasticsearchService.checkConnection();
         } catch (e: any) {
-            Logger.error(`Could not connect to Elasticsearch instance at "${nodeName}"`, loggerCtx);
+            Logger.error(`Could not connect to search backend (${backendLabel})`, loggerCtx);
             Logger.error(JSON.stringify(e), loggerCtx);
             return;
         }
-        Logger.info(`Successfully connected to Elasticsearch instance at "${nodeName}"`, loggerCtx);
+        Logger.info(`Successfully connected to search backend (${backendLabel})`, loggerCtx);
 
         await this.elasticsearchService.createIndicesIfNotExists();
         this.eventBus.ofType(ProductEvent).subscribe(event => {
@@ -227,27 +232,13 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
     }
 
     /**
-     * Returns a string representation of the target node(s) that the Elasticsearch
-     * client is configured to connect to.
+     * Returns a human-readable label identifying the configured search
+     * backend, purely for logging. The adapter is a black box to the plugin
+     * (it could be an in-memory mock in tests), so we just report the
+     * adapter's class name when available.
      */
-    private nodeName(): string {
-        const { host, port, clientOptions } = ElasticsearchPlugin.options;
-        const node = clientOptions?.node;
-        const nodes = clientOptions?.nodes;
-        if (nodes) {
-            return [...(Array.isArray(nodes) ? nodes : [nodes])].join(', ');
-        }
-        if (node) {
-            if (Array.isArray(node)) {
-                return (node as any[])
-                    .map((n: string | NodeOptions) => {
-                        return typeof n === 'string' ? n : n.url.toString();
-                    })
-                    .join(', ');
-            } else {
-                return typeof node === 'string' ? node : node.url.toString();
-            }
-        }
-        return `${host}:${port}`;
+    private backendLabel(): string {
+        const adapter: any = ElasticsearchPlugin.options.adapter;
+        return adapter?.constructor?.name ?? 'SearchClientAdapter';
     }
 }

@@ -1,57 +1,162 @@
-# Vendure Elasticsearch Plugin
+# Vendure Elasticsearch / OpenSearch Plugin
 
-This plugin allows your product search to be powered by [Elasticsearch](https://github.com/elastic/elasticsearch) — a powerful open source search
-engine. This is a drop-in replacement for the DefaultSearchPlugin which exposes many powerful configuration options enabling your storefront
-to support a wide range of use-cases such as indexing of custom properties, fine control over search index configuration, and to leverage
-advanced Elasticsearch features like spacial search.
+This plugin allows your product search to be powered by either
+[Elasticsearch](https://github.com/elastic/elasticsearch) or
+[OpenSearch](https://github.com/opensearch-project/OpenSearch) — powerful open
+source search engines. This is a drop-in replacement for the
+`DefaultSearchPlugin` which exposes many powerful configuration options
+enabling your storefront to support a wide range of use-cases such as indexing
+of custom properties, fine control over search index configuration, and to
+leverage advanced search features like spatial search.
+
+The plugin exposes a **pluggable `SearchClientAdapter`** interface, so you pick
+the backend by installing exactly one of the two client libraries and passing
+the corresponding adapter.
 
 ## Version Requirements
 
-**ElasticSearch v9.1.0 is supported**
+Vendure v3.6+ requires Elasticsearch v9.1 or newer. When using OpenSearch, the
+3.x client / 3.x server line is supported.
 
-The version of ElasticSearch that is deployed, the version of the JS library @elastic/elasticsearch installed in your Vendure project and the version
-of the JS library @elastic/elasticsearch used in the @vendure/elasticsearch-plugin must all match to avoid any issues. ElasticSearch does not allow @latest
-in its repository so these versions must be updated regularly.
+The version of the search engine that is deployed, the version of the
+JavaScript client installed in your Vendure project and the version of that
+same client used internally by `@vendure-community/elasticsearch-plugin` must
+all match to avoid any issues. Neither client allows `@latest` in its public
+repository, so these versions must be updated regularly.
 
-| Package  | Version |
-| ------------- | ------------- |
-| ElasticSearch  | v9.1.0  |
-| @elastic/elasticsearch  | v9.1.0  |
-| @vendure/elasticsearch-plugin | v3.5.0  |
-| Last updated | Dec 2, 2025 |
+| Package                                  | Minimum version |
+| ---------------------------------------- | --------------- |
+| `@vendure/core`                          | `3.6.0`         |
+| `@vendure-community/elasticsearch-plugin`| `2.0.0`         |
+| Elasticsearch (server + client)          | `9.1.0`         |
+| OpenSearch (server + client)             | `3.0.0`         |
 
-With ElasticSearch v8+, basic authentication, SSL, and TLS are enabled by default and may result in your client and plugin not being able to connect to
-ElasticSearch successfully if your client is not configured appropriately. You must also set `xpack.license.self_generated.type=basic` if you are
-using the free Community Edition of ElasticSearch.
+With Elasticsearch v8+, basic authentication, SSL, and TLS are enabled by
+default and may result in your client and plugin not being able to connect to
+Elasticsearch successfully if your client is not configured appropriately. You
+must also set `xpack.license.self_generated.type=basic` if you are using the
+free Community Edition of Elasticsearch.
 
-Review the ElasticSearch docker [example](https://github.com/vendure-ecommerce/vendure/blob/master/docker-compose.yml) here for development
-and testing without authentication and security enabled. Refer to ElasticSearch documentation to enable authentication and security in production.
+Review the Elasticsearch docker
+[example](https://github.com/vendure-ecommerce/vendure/blob/master/docker-compose.yml)
+here for development and testing without authentication and security enabled.
+Refer to the Elasticsearch documentation to enable authentication and security
+in production.
 
 ## Installation
 
+Install the plugin plus exactly **one** of the two search clients:
+
 ```shell
-npm install @elastic/elasticsearch @vendure/elasticsearch-plugin
+# Elasticsearch
+npm install @vendure-community/elasticsearch-plugin @elastic/elasticsearch
 ```
 
-Make sure to remove the `DefaultSearchPlugin` if it is still in the VendureConfig plugins array.
+```shell
+# OpenSearch
+npm install @vendure-community/elasticsearch-plugin @opensearch-project/opensearch
+```
+
+Both clients are declared as `optional` peer dependencies — only install the
+one you use. Make sure to remove the `DefaultSearchPlugin` from your
+`VendureConfig` plugins array.
 
 ## Setup
 
-Then add the `ElasticsearchPlugin`, calling the `.init()` method with `ElasticsearchOptions`:
+Build the adapter for the backend you want to use and pass it to
+`ElasticsearchPlugin.init()`.
+
+### Elasticsearch
 
 ```ts
-import { ElasticsearchPlugin } from '@vendure/elasticsearch-plugin';
+import { ElasticsearchPlugin, createElasticsearchAdapter } from '@vendure-community/elasticsearch-plugin';
 
 const config: VendureConfig = {
-  // Add an instance of the plugin to the plugins array
   plugins: [
     ElasticsearchPlugin.init({
-      host: 'http://localhost',
-      port: 9200,
+      adapter: createElasticsearchAdapter({
+        host: 'http://localhost',
+        port: 9200,
+        // Any additional @elastic/elasticsearch ClientOptions
+        // (auth, tls, cloud, headers, etc.) may be provided via `clientOptions`.
+        // clientOptions: { auth: { username: 'elastic', password: 'changeme' } },
+      }),
+      indexPrefix: 'vendure-',
     }),
   ],
 };
 ```
+
+### OpenSearch
+
+```ts
+import { ElasticsearchPlugin, createOpenSearchAdapter } from '@vendure-community/elasticsearch-plugin';
+
+const config: VendureConfig = {
+  plugins: [
+    ElasticsearchPlugin.init({
+      adapter: createOpenSearchAdapter({
+        host: 'http://localhost',
+        port: 9200,
+        // Any additional @opensearch-project/opensearch ClientOptions
+        // (auth, ssl, awssigv4, headers, etc.) may be provided via `clientOptions`.
+      }),
+      indexPrefix: 'vendure-',
+    }),
+  ],
+};
+```
+
+### Custom adapter
+
+`SearchClientAdapter` is a public TypeScript interface. You can implement your
+own adapter (e.g. to use a managed/hosted service with a custom SDK, or to
+inject a test double) and pass it directly:
+
+```ts
+import { ElasticsearchPlugin, SearchClientAdapter } from '@vendure-community/elasticsearch-plugin';
+
+class MyCustomAdapter implements SearchClientAdapter { /* ... */ }
+
+ElasticsearchPlugin.init({
+  adapter: new MyCustomAdapter(),
+});
+```
+
+If you need direct access to the underlying client (for example to issue a
+query that is not on the `SearchClientAdapter` surface), each built-in adapter
+exposes its native client via `adapter.getRawClient()`.
+
+## Migrating from v1.x
+
+Versions prior to `2.0.0` shipped as `@vendure/elasticsearch-plugin` and
+accepted `host` / `port` directly in `ElasticsearchPlugin.init(...)`. The
+v2 release introduces the adapter pattern so the same plugin can power both
+Elasticsearch and OpenSearch.
+
+**Before (v1.x):**
+
+```ts
+ElasticsearchPlugin.init({
+  host: 'http://localhost',
+  port: 9200,
+});
+```
+
+**After (v2.x):**
+
+```ts
+ElasticsearchPlugin.init({
+  adapter: createElasticsearchAdapter({
+    host: 'http://localhost',
+    port: 9200,
+  }),
+});
+```
+
+The `clientOptions` property that previously lived at the top level of
+`ElasticsearchOptions` now lives on the adapter factory options and is passed
+through to the underlying client constructor verbatim.
 
 ## Search API Extensions
 

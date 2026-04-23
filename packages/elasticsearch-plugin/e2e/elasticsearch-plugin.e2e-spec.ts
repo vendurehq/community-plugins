@@ -65,14 +65,18 @@ import {
 import { graphql, ResultOf } from './graphql/graphql-admin';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { elasticsearchHost, elasticsearchPort } = require('./constants');
+const { searchBackend } = require('./constants');
+import { buildAdapterForBackend } from './build-adapter-for-backend';
 
 type CreateChannelResult = NonNullable<ResultOf<typeof createChannelDocument>['createChannel']>;
 type ChannelFragment = Extract<CreateChannelResult, { id: string }>;
 
-const INDEX_PREFIX = 'e2e-tests';
+// Scope the prefix per backend so parallel/consecutive ES+OS runs never see
+// each other's indices. Stale state from one run would otherwise break the
+// other's assertions.
+const INDEX_PREFIX = `e2e-tests-${searchBackend as string}-`;
 
-describe('Elasticsearch plugin', () => {
+describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
     const { server, adminClient, shopClient } = createTestEnvironment(
         mergeConfig(testConfig(), {
             customFields: {
@@ -87,8 +91,7 @@ describe('Elasticsearch plugin', () => {
             plugins: [
                 ElasticsearchPlugin.init({
                     indexPrefix: INDEX_PREFIX,
-                    port: elasticsearchPort,
-                    host: elasticsearchHost,
+                    adapter: buildAdapterForBackend(),
                     hydrateProductVariantRelations: ['customFields.material', 'stockLevels'],
                     customProductVariantMappings: {
                         inStock: {
@@ -217,7 +220,7 @@ describe('Elasticsearch plugin', () => {
     afterAll(async () => {
         await awaitRunningJobs(adminClient);
         await server.destroy();
-    });
+    }, TEST_SETUP_TIMEOUT_MS);
 
     describe('shop api', () => {
         it('group by product', () => testGroupByProduct(shopClient));

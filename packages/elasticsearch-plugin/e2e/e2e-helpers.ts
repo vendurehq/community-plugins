@@ -1,4 +1,3 @@
-import { Client } from '@elastic/elasticsearch';
 import { LogicalOperator, SortOrder } from '@vendure/common/lib/generated-types';
 import { SimpleGraphQLClient } from '@vendure/testing';
 import { expect } from 'vitest';
@@ -6,11 +5,9 @@ import { expect } from 'vitest';
 import { searchProductsShopDocument } from './graphql/shop-definitions';
 import { deleteIndices } from '../src/indexing/indexing-utils';
 
+import { buildAdapterForBackend } from './build-adapter-for-backend';
 import { searchGetPricesDocument, searchProductsAdminDocument } from './elasticsearch-plugin.e2e-spec';
 import { VariablesOf } from './graphql/graphql-admin';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { elasticsearchHost, elasticsearchPort } = require('./constants');
 
 type SearchInput = VariablesOf<typeof searchProductsAdminDocument>['input'];
 
@@ -366,8 +363,10 @@ export async function testPriceRanges(client: SimpleGraphQLClient) {
 }
 
 export async function dropElasticIndices(indexPrefix: string) {
-    const esClient = new Client({
-        node: `${elasticsearchHost as string}:${elasticsearchPort as string}`,
-    });
-    return deleteIndices(esClient, indexPrefix);
+    const adapter = buildAdapterForBackend();
+    try {
+        await deleteIndices(adapter, indexPrefix);
+    } finally {
+        await adapter.close();
+    }
 }

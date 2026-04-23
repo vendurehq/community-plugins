@@ -1,12 +1,12 @@
-import { Client } from '@elastic/elasticsearch';
 import { DeepRequired, ID, Logger } from '@vendure/core';
 
+import type { SearchClientAdapter } from '../adapter';
 import { loggerCtx, VARIANT_INDEX_NAME } from '../constants';
 import { ElasticsearchOptions } from '../options';
 import { VariantIndexItem } from '../types';
 
 export async function createIndices(
-    client: Client,
+    adapter: SearchClientAdapter,
     prefix: string,
     indexSettings: object,
     indexMappingProperties: object,
@@ -68,25 +68,29 @@ export async function createIndices(
 
     const createIndex = async (mappings: { [prop in keyof any]: any }, index: string, alias: string) => {
         if (mapAlias) {
-            await client.indices.create({
+            await adapter.indices.create({
                 index,
-                mappings: {
-                    properties: mappings,
+                body: {
+                    mappings: {
+                        properties: mappings,
+                    },
+                    settings: indexSettings,
                 },
-                settings: indexSettings,
             });
-            await client.indices.putAlias({
+            await adapter.indices.putAlias({
                 index,
                 name: alias,
             });
             Logger.verbose(`Created index "${index}"`, loggerCtx);
         } else {
-            await client.indices.create({
+            await adapter.indices.create({
                 index: alias,
-                mappings: {
-                    properties: mappings,
+                body: {
+                    mappings: {
+                        properties: mappings,
+                    },
+                    settings: indexSettings,
                 },
-                settings: indexSettings,
             });
         }
     };
@@ -101,11 +105,11 @@ export async function createIndices(
     }
 }
 
-export async function deleteIndices(client: Client, prefix: string) {
+export async function deleteIndices(adapter: SearchClientAdapter, prefix: string) {
     try {
-        const index = await getIndexNameByAlias(client, prefix + VARIANT_INDEX_NAME);
+        const index = await getIndexNameByAlias(adapter, prefix + VARIANT_INDEX_NAME);
         if (index) {
-            await client.indices.delete({ index });
+            await adapter.indices.delete({ index });
             Logger.verbose(`Deleted index "${index}"`, loggerCtx);
         }
     } catch (e: any) {
@@ -113,13 +117,15 @@ export async function deleteIndices(client: Client, prefix: string) {
     }
 }
 
-export async function deleteByChannel(client: Client, prefix: string, channelId: ID) {
+export async function deleteByChannel(adapter: SearchClientAdapter, prefix: string, channelId: ID) {
     try {
         const index = prefix + VARIANT_INDEX_NAME;
-        await client.deleteByQuery({
+        await adapter.deleteByQuery({
             index,
-            query: {
-                match: { channelId },
+            body: {
+                query: {
+                    match: { channelId },
+                },
             },
         });
         Logger.verbose(`Deleted index "${index} for channel "${channelId}"`, loggerCtx);
@@ -128,26 +134,13 @@ export async function deleteByChannel(client: Client, prefix: string, channelId:
     }
 }
 
-export function getClient(
-    options: Required<ElasticsearchOptions> | DeepRequired<ElasticsearchOptions>,
-): Client {
-    const { host, port } = options;
-    const node = options.clientOptions?.node ?? `${host}:${port}`;
-    return new Client({
-        node,
-        // `any` cast is there due to a strange error "Property '[Symbol.iterator]' is missing in type... URLSearchParams"
-        // which looks like possibly a TS/definitions bug.
-        ...(options.clientOptions as any),
-    });
-}
-
-export async function getIndexNameByAlias(client: Client, aliasName: string) {
-    const aliasExist = await client.indices.existsAlias({ name: aliasName }, { meta: true });
+export async function getIndexNameByAlias(adapter: SearchClientAdapter, aliasName: string) {
+    const aliasExist = await adapter.indices.existsAlias({ name: aliasName });
     if (aliasExist.body) {
-        const alias = await client.indices.getAlias({
+        const alias = await adapter.indices.getAlias({
             name: aliasName,
         });
-        const keys = Object.keys(alias);
+        const keys = Object.keys(alias.body);
         return keys[0];
     } else {
         return aliasName;

@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2.0.0
+
+### Features
+
+* **elasticsearch-plugin:** introduce pluggable `SearchClientAdapter` interface so the plugin can be backed by either Elasticsearch or OpenSearch. Ship two first-party adapters: `ElasticsearchAdapter` (via `createElasticsearchAdapter`) and `OpenSearchAdapter` (via `createOpenSearchAdapter`). `@elastic/elasticsearch` and `@opensearch-project/opensearch` are both declared as optional peer dependencies — install only the one you use.
+* **elasticsearch-plugin:** expose `adapter.getRawClient()` escape hatch for advanced queries that are not on the `SearchClientAdapter` surface.
+
+### BREAKING CHANGES
+
+* **elasticsearch-plugin:** `ElasticsearchPlugin.init({ host, port, clientOptions })` is replaced with `ElasticsearchPlugin.init({ adapter })`. Wrap existing configuration with `createElasticsearchAdapter({ host, port, clientOptions })` to preserve previous behaviour. See the README "Migrating from v1.x" section for a worked example.
+* **elasticsearch-plugin:** bumps minimum Elasticsearch server/client to `9.1.0` to align with Vendure `3.6.0`'s [minimum Elasticsearch requirement](https://github.com/vendurehq/vendure/releases/tag/v3.6.0).
+
 ## 1.1.0
 
 Changes synced from the Vendure core v3.6.0 development branch.

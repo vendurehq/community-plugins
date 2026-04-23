@@ -1,4 +1,3 @@
-import { Client } from '@elastic/elasticsearch';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SearchResultAsset } from '@vendure/common/lib/generated-types';
 import {
@@ -18,11 +17,12 @@ import {
 } from '@vendure/core';
 import equal from 'fast-deep-equal/es6';
 
+import type { SearchClientAdapter } from './adapter';
 import { buildElasticBody } from './build-elastic-body';
 import { ELASTIC_SEARCH_OPTIONS, loggerCtx, VARIANT_INDEX_NAME } from './constants';
 import { ElasticsearchIndexService } from './indexing/elasticsearch-index.service';
-import { createIndices, getClient } from './indexing/indexing-utils';
-import { ElasticsearchOptions } from './options';
+import { createIndices } from './indexing/indexing-utils';
+import { ElasticsearchOptions, ElasticsearchRuntimeOptions } from './options';
 import {
     CustomMapping,
     CustomScriptContext,
@@ -39,10 +39,10 @@ import {
 
 @Injectable()
 export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
-    private client: Client;
+    private adapter!: SearchClientAdapter;
 
     constructor(
-        @Inject(ELASTIC_SEARCH_OPTIONS) private options: DeepRequired<ElasticsearchOptions>,
+        @Inject(ELASTIC_SEARCH_OPTIONS) private options: ElasticsearchRuntimeOptions,
         private searchService: SearchService,
         private elasticsearchIndexService: ElasticsearchIndexService,
         private configService: ConfigService,
@@ -54,11 +54,11 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
     }
 
     onModuleInit(): any {
-        this.client = getClient(this.options);
+        this.adapter = this.options.adapter;
     }
 
     onModuleDestroy(): any {
-        return this.client.close();
+        return this.adapter.close();
     }
 
     async checkConnection(): Promise<void> {
@@ -66,28 +66,28 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
         await new Promise<void>(async (resolve, reject) => {
             const { connectionAttempts, connectionAttemptInterval } = this.options;
             let attempts = 0;
-            Logger.verbose('Pinging Elasticsearch...', loggerCtx);
+            Logger.verbose('Pinging search backend...', loggerCtx);
             while (attempts < connectionAttempts) {
                 attempts++;
                 try {
-                    const pingResult = await this.client.ping({}, { requestTimeout: 1000, meta: true });
+                    const pingResult = await this.adapter.ping({ requestTimeout: 1000 });
                     if (pingResult.body) {
-                        Logger.verbose('Ping to Elasticsearch successful', loggerCtx);
+                        Logger.verbose('Ping to search backend successful', loggerCtx);
                         return resolve();
                     }
                 } catch (e: any) {
                     Logger.verbose(
-                        `Ping to Elasticsearch failed with error "${e.message as string}"`,
+                        `Ping to search backend failed with error "${e.message as string}"`,
                         loggerCtx,
                     );
                 }
                 Logger.verbose(
-                    `Connection to Elasticsearch could not be made, trying again after ${connectionAttemptInterval}ms (attempt ${attempts} of ${connectionAttempts})`,
+                    `Connection to search backend could not be made, trying again after ${connectionAttemptInterval}ms (attempt ${attempts} of ${connectionAttempts})`,
                     loggerCtx,
                 );
                 await new Promise(resolve1 => setTimeout(resolve1, connectionAttemptInterval));
             }
-            reject('Could not connection to Elasticsearch. Aborting bootstrap.');
+            reject('Could not connection to search backend. Aborting bootstrap.');
         });
     }
 
@@ -96,12 +96,12 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
         const createIndex = async (indexName: string) => {
             const index = indexPrefix + indexName;
-            const result = await this.client.indices.exists({ index }, { meta: true });
+            const result = await this.adapter.indices.exists({ index });
 
             if (!result.body) {
                 Logger.verbose(`Index "${index}" does not exist. Creating...`, loggerCtx);
                 await createIndices(
-                    this.client,
+                    this.adapter,
                     indexPrefix,
                     this.options.indexSettings,
                     this.options.indexMappingProperties,
@@ -109,10 +109,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
             } else {
                 Logger.verbose(`Index "${index}" exists`, loggerCtx);
 
-                const existingIndexSettingsResult = await this.client.indices.getSettings(
-                    { index },
-                    { meta: true },
-                );
+                const existingIndexSettingsResult = await this.adapter.indices.getSettings({ index });
                 let existingIndexSettings;
 
                 if (existingIndexSettingsResult.body) {
@@ -127,17 +124,17 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                 const tempIndex = tempPrefix + indexName;
 
                 await createIndices(
-                    this.client,
+                    this.adapter,
                     tempPrefix,
                     this.options.indexSettings,
                     this.options.indexMappingProperties,
                     false,
                 );
-                const tempIndexSettingsResult = await this.client.indices.getSettings(
-                    { index: tempIndex },
-                    { meta: true },
-                );
-                const tempIndexSettings = tempIndexSettingsResult.body[tempIndex]?.settings?.index;
+                const tempIndexSettingsResult = await this.adapter.indices.getSettings({
+                    index: tempIndex,
+                });
+                const tempIndexSettings = (tempIndexSettingsResult.body as Record<string, any>)[tempIndex]
+                    ?.settings?.index;
 
                 const indexParamsToExclude = [
                     'routing',
@@ -166,31 +163,27 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                         loggerCtx,
                     );
                 else {
-                    const existingIndexMappingsResult = await this.client.indices.getMapping(
-                        { index },
-                        { meta: true },
-                    );
+                    const existingIndexMappingsResult = await this.adapter.indices.getMapping({ index });
                     const existingIndexMappings =
-                        existingIndexMappingsResult.body[Object.keys(existingIndexMappingsResult.body)[0]]
-                            .mappings;
+                        (existingIndexMappingsResult.body as Record<string, any>)[
+                            Object.keys(existingIndexMappingsResult.body)[0]
+                        ].mappings;
 
-                    const tempIndexMappingsResult = await this.client.indices.getMapping(
-                        {
-                            index: tempIndex,
-                        },
-                        { meta: true },
-                    );
-                    const tempIndexMappings = tempIndexMappingsResult.body[tempIndex].mappings;
+                    const tempIndexMappingsResult = await this.adapter.indices.getMapping({
+                        index: tempIndex,
+                    });
+                    const tempIndexMappings = (tempIndexMappingsResult.body as Record<string, any>)[
+                        tempIndex
+                    ].mappings;
                     if (!equal(tempIndexMappings, existingIndexMappings))
-                         
                         Logger.warn(
                             `Index "${index}" mapping differs from index mapping in vendure config! Consider re-indexing the data.`,
                             loggerCtx,
                         );
                 }
 
-                await this.client.indices.delete({
-                    index: [tempPrefix + 'variants'],
+                await this.adapter.indices.delete({
+                    index: tempPrefix + 'variants',
                 });
             }
         };
@@ -225,13 +218,10 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
         if (groupByProduct || groupBySKU) {
             try {
-                const { body } = await this.client.search(
-                    {
-                        index: indexPrefix + VARIANT_INDEX_NAME,
-                        ...elasticSearchBody,
-                    },
-                    { meta: true },
-                );
+                const { body } = await this.adapter.search<VariantIndexItem>({
+                    index: indexPrefix + VARIANT_INDEX_NAME,
+                    body: elasticSearchBody,
+                });
 
                 const totalItems = await this.totalHits(ctx, input, enabledOnly);
 
@@ -247,28 +237,15 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                     totalItems,
                 };
             } catch (e: any) {
-                if (e.meta.body.error.type && e.meta.body.error.type === 'search_phase_execution_exception') {
-                    // Log runtime error of the script exception instead of stacktrace
-                    Logger.error(
-                        e.message,
-                        loggerCtx,
-                        JSON.stringify(e.meta.body.error.root_cause || [], null, 2),
-                    );
-                    Logger.verbose(JSON.stringify(e.meta.body.error.failed_shards || [], null, 2), loggerCtx);
-                } else {
-                    Logger.error(e.message, loggerCtx, e.stack);
-                }
+                this.logSearchError(e);
                 throw e;
             }
         } else {
             try {
-                const { body } = await this.client.search(
-                    {
-                        index: indexPrefix + VARIANT_INDEX_NAME,
-                        ...elasticSearchBody,
-                    },
-                    { meta: true },
-                );
+                const { body } = await this.adapter.search<VariantIndexItem>({
+                    index: indexPrefix + VARIANT_INDEX_NAME,
+                    body: elasticSearchBody,
+                });
                 await this.eventBus.publish(new SearchEvent(ctx, input));
                 return {
                     items: body.hits.hits.map(hit =>
@@ -279,17 +256,7 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                     ),
                 };
             } catch (e: any) {
-                if (e.meta.body.error.type && e.meta.body.error.type === 'search_phase_execution_exception') {
-                    // Log runtime error of the script exception instead of stacktrace
-                    Logger.error(
-                        e.message,
-                        loggerCtx,
-                        JSON.stringify(e.meta.body.error.root_cause || [], null, 2),
-                    );
-                    Logger.verbose(JSON.stringify(e.meta.body.error.failed_shards || [], null, 2), loggerCtx);
-                } else {
-                    Logger.error(e.message, loggerCtx, e.stack);
-                }
+                this.logSearchError(e);
                 throw e;
             }
         }
@@ -319,18 +286,15 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                 },
             },
         };
-        const response = await this.client.search(
-            {
-                index: indexPrefix + VARIANT_INDEX_NAME,
-                ...elasticSearchBody,
-            },
-            { meta: true },
-        );
+        const response = await this.adapter.search({
+            index: indexPrefix + VARIANT_INDEX_NAME,
+            body: elasticSearchBody,
+        });
 
         const { aggregations } = response.body;
         if (!aggregations) {
             throw new InternalServerError(
-                'An error occurred when querying Elasticsearch for priceRange aggregations',
+                'An error occurred when querying search backend for priceRange aggregations',
             );
         }
         return aggregations.total && (aggregations.total as any).value != null
@@ -460,13 +424,10 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
         let body;
         try {
-            const result = await this.client.search<SearchResponseBody<VariantIndexItem>>(
-                {
-                    index: indexPrefix + VARIANT_INDEX_NAME,
-                    ...elasticSearchBody,
-                },
-                { meta: true },
-            );
+            const result = await this.adapter.search<VariantIndexItem>({
+                index: indexPrefix + VARIANT_INDEX_NAME,
+                body: elasticSearchBody,
+            });
             body = result.body;
         } catch (e: any) {
             Logger.error(e.message, loggerCtx, e.stack);
@@ -522,18 +483,15 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
                 },
             },
         };
-        const result = await this.client.search(
-            {
-                index: indexPrefix + VARIANT_INDEX_NAME,
-                ...elasticSearchBody,
-            },
-            { meta: true },
-        );
+        const result = await this.adapter.search({
+            index: indexPrefix + VARIANT_INDEX_NAME,
+            body: elasticSearchBody,
+        });
 
         const { aggregations } = result.body;
         if (!aggregations) {
             throw new InternalServerError(
-                'An error occurred when querying Elasticsearch for priceRange aggregations',
+                'An error occurred when querying search backend for priceRange aggregations',
             );
         }
         const mapPriceBuckets = (b: { key: string; doc_count: number }) => ({
@@ -564,8 +522,21 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
      */
     async reindex(ctx: RequestContext): Promise<Job> {
         const job = await this.elasticsearchIndexService.reindex(ctx);
-         
         return job;
+    }
+
+    private logSearchError(e: any): void {
+        // Both the ES and OS clients attach the failed response envelope under
+        // `meta.body` or `body` depending on the version. We accept either so
+        // the adapter can stay client-agnostic.
+        const envelope = e?.meta?.body ?? e?.body;
+        const error = envelope?.error;
+        if (error?.type && error.type === 'search_phase_execution_exception') {
+            Logger.error(e.message, loggerCtx, JSON.stringify(error.root_cause || [], null, 2));
+            Logger.verbose(JSON.stringify(error.failed_shards || [], null, 2), loggerCtx);
+        } else {
+            Logger.error(e.message, loggerCtx, e.stack);
+        }
     }
 
     private mapVariantToSearchResult(hit: SearchHit<VariantIndexItem>): ElasticSearchResult {
