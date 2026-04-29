@@ -10,15 +10,15 @@ Thanks for your interest in contributing! This document covers everything you ne
 ## Setup
 
 ```bash
-npm install
-npm run build
+bun install
+bun run build
 ```
 
 ## Linting
 
 ```bash
 # Check for lint issues
-npm run lint
+bun run lint
 
 # Auto-fix lint issues
 npx eslint --fix .
@@ -31,13 +31,13 @@ npx eslint --fix .
 docker compose up -d
 
 # Run all unit tests
-npm run test
+bun run test
 
 # Run all e2e tests
-npm run e2e
+bun run e2e
 
 # Run e2e for a specific package
-cd packages/elasticsearch-plugin && npm run e2e
+cd packages/elasticsearch-plugin && bun run e2e
 ```
 
 ## Releasing

@@ -1,6 +1,15 @@
 {
     "name": "community-plugins",
     "private": true,
+    "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+    },
+    "trustedDependencies": [
+        "@sentry-internal/node-cpu-profiler",
+        "bcrypt",
+        "better-sqlite3",
+        "sharp"
+    ],
     "workspaces": [
         "packages/*",
         "dev-server",
