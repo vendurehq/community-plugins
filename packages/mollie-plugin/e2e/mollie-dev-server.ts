@@ -40,7 +40,7 @@ async function runMollieDevServer() {
             shopApiPlayground: true,
         },
     });
-    const { server, shopClient, adminClient } = createTestEnvironment(config as any);
+    const { server, shopClient, adminClient } = createTestEnvironment(config);
     await server.init({
         initialData,
         productsCsvPath: path.join(__dirname, 'fixtures/e2e-products-minimal.csv'),

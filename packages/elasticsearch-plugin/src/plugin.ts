@@ -85,7 +85,7 @@ function getCustomResolvers(options: ElasticsearchRuntimeOptions) {
             EntityElasticSearchResolver,
             ...getCustomResolvers(ElasticsearchPlugin.options),
         ],
-        schema: () => generateSchemaExtensions(ElasticsearchPlugin.options as any),
+        schema: () => generateSchemaExtensions(ElasticsearchPlugin.options),
     },
     shopApiExtensions: {
         resolvers: () => [
@@ -95,7 +95,7 @@ function getCustomResolvers(options: ElasticsearchRuntimeOptions) {
         ],
         // `any` cast is there due to a strange error "Property '[Symbol.iterator]' is missing in type... URLSearchParams"
         // which looks like possibly a TS/definitions bug.
-        schema: () => generateSchemaExtensions(ElasticsearchPlugin.options as any),
+        schema: () => generateSchemaExtensions(ElasticsearchPlugin.options),
     },
     compatibility: '^3.0.0',
 })

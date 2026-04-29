@@ -39,7 +39,7 @@ const SentryOptionsProvider = {
     compatibility: '^3.0.0',
 })
 export class SentryPlugin {
-    static options: SentryPluginOptions = {} as any;
+    static options: SentryPluginOptions = {};
 
     static init(options?: SentryPluginOptions) {
         this.options = options ?? {};
