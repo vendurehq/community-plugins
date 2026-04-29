@@ -55,6 +55,7 @@ import {
     deleteAssetDocument,
     deleteProductDocument,
     deleteProductVariantDocument,
+    getProductWithVariantsDocument,
     removeProductFromChannelDocument,
     removeProductVariantFromChannelDocument,
     updateAssetDocument,
@@ -64,7 +65,6 @@ import {
     updateTaxRateDocument,
 } from './graphql/shared-definitions';
 import { searchProductsShopDocument } from './graphql/shop-definitions';
-
 
 
 const { searchBackend } = require('./constants');
@@ -1256,6 +1256,123 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
                 );
             });
         });
+
+        describe('multiple currency handling', () => {
+          
+            const MULTIPLE_CURRENCY_CHANNEL_TOKEN = 'multiple-currency-channel-token';
+            let multipleCurrencyChannel: ChannelFragment;
+
+            beforeAll(async () => {
+                const { createChannel } = await adminClient.query(createChannelDocument, {
+                    input: {
+                        code: 'multiple-currency-channel',
+                        token: MULTIPLE_CURRENCY_CHANNEL_TOKEN,
+                        defaultLanguageCode: LanguageCode.en,
+                        currencyCode: CurrencyCode.GBP,
+                        availableCurrencyCodes: [CurrencyCode.GBP, CurrencyCode.EUR],
+                        pricesIncludeTax: true,
+                        defaultTaxZoneId: 'T_2',
+                        defaultShippingZoneId: 'T_1',
+                    },
+                });
+                multipleCurrencyChannel = createChannel as ChannelFragment;
+
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                await adminClient.query(assignProductToChannelDocument, {
+                    input: { channelId: multipleCurrencyChannel.id, productIds: ['T_3', 'T_4'] },
+                });
+                await awaitRunningJobs(adminClient);
+
+                const { product: productT3 } = await adminClient.query(
+                    getProductWithVariantsDocument,
+                    { id: 'T_3' },
+                );
+                const { product: productT4 } = await adminClient.query(
+                    getProductWithVariantsDocument,
+                    { id: 'T_4' },
+                );
+
+                adminClient.setChannelToken(MULTIPLE_CURRENCY_CHANNEL_TOKEN);
+                await adminClient.query(updateProductVariantsDocument, {
+                    input: [
+                        ...productT3!.variants.map((v, idx) => ({
+                            id: v.id,
+                            prices: [{ currencyCode: CurrencyCode.EUR, price: 1000 + idx }],
+                        })),
+                        ...productT4!.variants.map((v,idx) => ({
+                            id: v.id,
+                            prices: [{ currencyCode: CurrencyCode.EUR, price: 500 + idx }],
+                        })),
+                    ],
+                });
+
+                await adminClient.query(reindexDocument);
+                await awaitRunningJobs(adminClient);
+            });
+
+            it('lookup product', async() => {
+                adminClient.setChannelToken(MULTIPLE_CURRENCY_CHANNEL_TOKEN);
+                const { search } = await doAdminSearchQuery(adminClient, { groupByProduct: true });
+                expect(search.items.map(i => i.productId).sort()).toEqual(['T_3', 'T_4']);
+            })
+
+            it('return GBP by default', async() => {
+                shopClient.setChannelToken(MULTIPLE_CURRENCY_CHANNEL_TOKEN);
+                const result = await shopClient.query(searchGetPricesDocumentWithID, {
+                    input: {
+                        groupByProduct: true,
+                        take: 2
+                    },
+                });
+                expect(result.search.items.find(item => item.productId === "T_4")).toEqual(
+                    {
+                        "productId":"T_4",
+                        "currencyCode": "GBP",
+                        "price":{"min":7896,"max":13435},
+                        "priceWithTax":{"min":11844,"max":20153}
+                    }
+                );
+                expect(result.search.items.find(item => item.productId === "T_3")).toEqual(
+                    {
+                        "productId":"T_3",
+                        "currencyCode": "GBP",
+                        "price":{"min":93120,"max":109995},
+                        "priceWithTax":{"min":139680,"max":164993}
+                    }
+                );
+            })
+
+            it('return EUR when requested', async () => {
+                shopClient.setChannelToken(MULTIPLE_CURRENCY_CHANNEL_TOKEN);
+                const result = await shopClient.query(
+                    searchGetPricesDocumentWithID,
+                    {
+                        input: {
+                            groupByProduct: true,
+                            take: 2,
+                        },
+                    },
+                    { currencyCode: CurrencyCode.EUR },
+                );
+                expect(result.search.items.find(item => item.productId === 'T_3')).toEqual({
+                    productId: 'T_3',
+                    currencyCode: "EUR",
+                    price: { min: 667, max: 669 },
+                    priceWithTax: { min: 1000, max: 1003 },
+                });
+                expect(result.search.items.find(item => item.productId === 'T_4')).toEqual({
+                    productId: 'T_4',
+                    currencyCode: "EUR",
+                    price: { min: 333, max: 335 },
+                    priceWithTax: { min: 500, max: 502 },
+                });
+            });
+
+            afterAll(async() => {
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            })
+        });
     });
 
     describe('customMappings', () => {
@@ -1299,6 +1416,7 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
 
         // https://github.com/vendurehq/vendure/issues/1638
         it('hydrates variant custom field relation', async () => {
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
             await adminClient.query(updateProductVariantsDocument, {
                 input: [
                     {
@@ -1648,6 +1766,35 @@ export const searchGetPricesDocument = graphql(`
     query SearchGetPrices($input: SearchInput!) {
         search(input: $input) {
             items {
+                price {
+                    ... on PriceRange {
+                        min
+                        max
+                    }
+                    ... on SinglePrice {
+                        value
+                    }
+                }
+                priceWithTax {
+                    ... on PriceRange {
+                        min
+                        max
+                    }
+                    ... on SinglePrice {
+                        value
+                    }
+                }
+            }
+        }
+    }
+`);
+
+export const searchGetPricesDocumentWithID = graphql(`
+    query SearchGetPrices($input: SearchInput!) {
+        search(input: $input) {
+            items {
+                productId
+                currencyCode
                 price {
                     ... on PriceRange {
                         min
