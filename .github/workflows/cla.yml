@@ -16,12 +16,20 @@ jobs:
   CLAAssistant:
     runs-on: ubuntu-latest
     steps:
+      # Mint a GitHub App token that can read/write to BOTH this repo (for PR
+      # comments and locking) AND the main vendure repo (where the canonical
+      # signatures file lives). This way contributors only ever have to sign
+      # the CLA once across all Vendure open-source projects.
       - name: Generate CI Bot Token
         id: app-token
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.CI_BOT_APP_ID }}
           private-key: ${{ secrets.CI_BOT_APP_PRIVATE_KEY }}
+          owner: vendurehq
+          repositories: |
+            community-plugins
+            vendure
 
       # Third-party actions are pinned to commit SHAs to prevent supply chain attacks
       # via mutable version tags. See https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions
@@ -30,17 +38,14 @@ jobs:
         uses: contributor-assistant/github-action@9340315624c6e16cef1f2c63bdeb0f0c49c6f474 # v2.4.0
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # When `remote-organization-name`/`remote-repository-name` are set, the action uses
+          # PERSONAL_ACCESS_TOKEN (not GITHUB_TOKEN) for the remote read/write of the signatures file.
+          PERSONAL_ACCESS_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           path-to-signatures: 'license/signatures/version1/cla.json'
-          path-to-document: 'https://github.com/vendurehq/community-plugins/blob/main/license/CLA.md'
-          branch: 'main'
+          path-to-document: 'https://github.com/vendurehq/vendure/blob/master/license/CLA.md'
+          # `branch` here refers to the branch of the REMOTE repo where signatures are stored.
+          branch: 'master'
+          remote-organization-name: vendurehq
+          remote-repository-name: vendure
           allowlist: user1,bot*
-
-          # the followings are the optional inputs - If the optional inputs are not given, then default values will be taken
-          #remote-organization-name: enter the remote organization name where the signatures should be stored (Default is storing the signatures in the same repository)
-          #remote-repository-name: enter the  remote repository name where the signatures should be stored (Default is storing the signatures in the same repository)
-          #create-file-commit-message: 'For example: Creating file for storing CLA Signatures'
-          #signed-commit-message: 'For example: $contributorName has signed the CLA in $owner/$repo#$pullRequestNo'
-          #custom-notsigned-prcomment: 'pull request comment with Introductory message to ask new contributors to sign'
-          #custom-pr-sign-comment: 'The signature to be committed in order to sign the CLA'
-          #custom-allsigned-prcomment: 'pull request comment when all contributors has signed, defaults to **CLA Assistant Lite bot** All Contributors have signed the CLA.'

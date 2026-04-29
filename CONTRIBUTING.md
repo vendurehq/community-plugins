@@ -2,6 +2,10 @@
 
 Thanks for your interest in contributing! This document covers everything you need to get set up, run tests, and release new versions.
 
+## Contributor License Agreement
+
+Before your first contribution can be merged, you'll be asked to sign our [Contributor License Agreement](https://github.com/vendurehq/vendure/blob/master/license/CLA.md). When you open a pull request, the CLA Assistant bot will comment with instructions — just reply with the requested signature line and you're done. Signatures are stored centrally in the [main Vendure repo](https://github.com/vendurehq/vendure), so you only need to sign once across all Vendure open-source projects.
+
 ## Prerequisites
 
 - Node.js >= 20
