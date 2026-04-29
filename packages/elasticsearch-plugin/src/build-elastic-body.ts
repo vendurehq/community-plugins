@@ -39,6 +39,9 @@ export function buildElasticBody(
     ensureBoolFilterExists(query);
     query.bool.filter.push({ term: { channelId } });
     query.bool.filter.push({ term: { languageCode } });
+    if (ctx.currencyCode) {
+        query.bool.filter.push({ term: { currencyCode: ctx.currencyCode } });
+    }
 
     if (term) {
         query.bool.must = [
