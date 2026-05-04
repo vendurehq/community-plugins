@@ -123,9 +123,11 @@ import { ElasticsearchPlugin, SearchClientAdapter } from '@vendure-community/ela
 class MyCustomAdapter implements SearchClientAdapter { /* ... */ }
 
 ElasticsearchPlugin.init({
-  // Return a fresh instance per call — the plugin invokes the factory once
-  // per internal provider, so sharing a single instance would tear the
-  // underlying client down twice and starve the other provider.
+  // Return a fresh instance per call. The plugin invokes the factory once
+  // per internal provider (the read-side service and the write-side indexer),
+  // so each gets its own client and connection pool — bulk indexing cannot
+  // saturate the pool serving live search queries, and shutdown closes them
+  // independently.
   adapter: () => new MyCustomAdapter(),
 });
 ```
