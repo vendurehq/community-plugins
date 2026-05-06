@@ -29,6 +29,7 @@ import {
     PaymentMethod,
     PaymentMethodService,
     RequestContext,
+    TransactionalConnection,
 } from '@vendure/core';
 import { totalCoveredByPayments } from '@vendure/core/dist/service/helpers/utils/order-utils';
 
@@ -82,6 +83,7 @@ export class MollieService {
         @Inject(PLUGIN_INIT_OPTIONS) private options: MolliePluginOptions,
         private activeOrderService: ActiveOrderService,
         private orderService: OrderService,
+        private connection: TransactionalConnection,
         private entityHydrator: EntityHydrator,
         private moduleRef: ModuleRef,
         private configService: ConfigService,
@@ -375,37 +377,39 @@ export class MollieService {
         paymentMethodCode: string,
         status: 'Authorized' | 'Settled',
     ): Promise<Order> {
-        if (order.state !== 'ArrangingPayment' && order.state !== 'ArrangingAdditionalPayment') {
-            const transitionToStateResult = await this.orderService.transitionToState(
-                ctx,
-                order.id,
-                'ArrangingPayment',
-            );
-            if (transitionToStateResult instanceof OrderStateTransitionError) {
-                throw Error(
-                    `Error transitioning order ${order.code} from ${transitionToStateResult.fromState} ` +
-                        `to ${transitionToStateResult.toState}: ${transitionToStateResult.message}`,
+        return this.connection.withTransaction(ctx, async txCtx => {
+            if (order.state !== 'ArrangingPayment' && order.state !== 'ArrangingAdditionalPayment') {
+                const transitionToStateResult = await this.orderService.transitionToState(
+                    txCtx,
+                    order.id,
+                    'ArrangingPayment',
                 );
+                if (transitionToStateResult instanceof OrderStateTransitionError) {
+                    throw Error(
+                        `Error transitioning order ${order.code} from ${transitionToStateResult.fromState} ` +
+                            `to ${transitionToStateResult.toState}: ${transitionToStateResult.message}`,
+                    );
+                }
             }
-        }
-        const metadata: MolliePaymentMetadata = {
-            amount,
-            status,
-            paymentId: mollieMetadata.paymentId,
-            mode: mollieMetadata.mode,
-            method: mollieMetadata.method,
-            profileId: mollieMetadata.profileId,
-            authorizedAt: mollieMetadata.authorizedAt,
-            paidAt: mollieMetadata.paidAt,
-        };
-        const addPaymentToOrderResult = await this.orderService.addPaymentToOrder(ctx, order.id, {
-            method: paymentMethodCode,
-            metadata,
+            const metadata: MolliePaymentMetadata = {
+                amount,
+                status,
+                paymentId: mollieMetadata.paymentId,
+                mode: mollieMetadata.mode,
+                method: mollieMetadata.method,
+                profileId: mollieMetadata.profileId,
+                authorizedAt: mollieMetadata.authorizedAt,
+                paidAt: mollieMetadata.paidAt,
+            };
+            const addPaymentToOrderResult = await this.orderService.addPaymentToOrder(txCtx, order.id, {
+                method: paymentMethodCode,
+                metadata,
+            });
+            if (!(addPaymentToOrderResult instanceof Order)) {
+                throw Error(`Error adding payment to order ${order.code}: ${addPaymentToOrderResult.message}`);
+            }
+            return addPaymentToOrderResult;
         });
-        if (!(addPaymentToOrderResult instanceof Order)) {
-            throw Error(`Error adding payment to order ${order.code}: ${addPaymentToOrderResult.message}`);
-        }
-        return addPaymentToOrderResult;
     }
 
     /**
