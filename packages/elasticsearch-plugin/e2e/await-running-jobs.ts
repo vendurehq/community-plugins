@@ -1,7 +1,7 @@
 import { SimpleGraphQLClient } from '@vendure/testing';
 
-import { getRunningJobsDocument } from './graphql/shared-definitions';
 import { ResultOf, VariablesOf } from './graphql/graphql-admin';
+import { getRunningJobsDocument } from './graphql/shared-definitions';
 
 /**
  * For mutation which trigger background jobs, this can be used to "pause" the execution of

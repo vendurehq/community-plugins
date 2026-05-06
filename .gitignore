@@ -8,6 +8,9 @@ __data__/
 *.sqlite
 .idea/
 .vscode/
+
+# Vendure telemetry runtime artifacts
+.vendure/
 *.log
 .env
 

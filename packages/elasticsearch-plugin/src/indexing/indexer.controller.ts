@@ -1,4 +1,4 @@
-import { Client } from '@elastic/elasticsearch';
+import type { SearchClientAdapter } from '../adapter';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { unique } from '@vendure/common/lib/unique';
@@ -31,7 +31,7 @@ import { Observable } from 'rxjs';
 import { In, IsNull } from 'typeorm';
 
 import { ELASTIC_SEARCH_OPTIONS, loggerCtx, VARIANT_INDEX_NAME } from '../constants';
-import { ElasticsearchOptions } from '../options';
+import { ElasticsearchRuntimeOptions } from '../options';
 import {
     BulkOperation,
     BulkOperationDoc,
@@ -46,7 +46,7 @@ import {
     VariantIndexItem,
 } from '../types';
 
-import { createIndices, getClient, getIndexNameByAlias } from './indexing-utils';
+import { createIndices, getIndexNameByAlias } from './indexing-utils';
 
 export const defaultProductRelations: Array<EntityRelationPaths<Product>> = [
     'featuredAsset',
@@ -79,7 +79,7 @@ type BulkVariantOperation = {
 
 @Injectable()
 export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDestroy {
-    private client: Client;
+    private adapter!: SearchClientAdapter;
     private asyncQueue = new AsyncQueue('elasticsearch-indexer', 5);
     private productRelations: Array<EntityRelationPaths<Product>>;
     private variantRelations: Array<EntityRelationPaths<ProductVariant>>;
@@ -87,7 +87,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
     constructor(
         private connection: TransactionalConnection,
-        @Inject(ELASTIC_SEARCH_OPTIONS) private options: Required<ElasticsearchOptions>,
+        @Inject(ELASTIC_SEARCH_OPTIONS) private options: ElasticsearchRuntimeOptions,
         private productPriceApplicator: ProductPriceApplicator,
         private configService: ConfigService,
         private productVariantService: ProductVariantService,
@@ -96,7 +96,11 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
     ) {}
 
     onModuleInit(): any {
-        this.client = getClient(this.options);
+        // Build our own adapter instance from the factory. ElasticsearchService
+        // does the same independently, so this controller and the read-side
+        // service each own a separate client & connection pool — tearing one
+        // down during `onModuleDestroy` does not drain the other.
+        this.adapter = this.options.adapter();
         this.productRelations = this.getReindexRelations(
             defaultProductRelations,
             this.options.hydrateProductRelations,
@@ -109,7 +113,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
     }
 
     onModuleDestroy(): any {
-        return this.client.close();
+        return this.adapter.close();
     }
 
     /**
@@ -241,7 +245,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 const reindexVariantAliasName = `${this.options.indexPrefix}${variantIndexNameForReindex}`;
                 try {
                     await createIndices(
-                        this.client,
+                        this.adapter,
                         this.options.indexPrefix,
                         this.options.indexSettings,
                         this.options.indexMappingProperties,
@@ -330,7 +334,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
     async updateAsset(data: UpdateAssetMessageData): Promise<boolean> {
         const result = await this.updateAssetFocalPointForIndex(VARIANT_INDEX_NAME, data.asset);
-        await this.client.indices.refresh({
+        await this.adapter.indices.refresh({
             index: [this.options.indexPrefix + VARIANT_INDEX_NAME],
         });
         return result;
@@ -338,7 +342,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
     async deleteAsset(data: UpdateAssetMessageData): Promise<boolean> {
         const result = await this.deleteAssetForIndex(VARIANT_INDEX_NAME, data.asset);
-        await this.client.indices.refresh({
+        await this.adapter.indices.refresh({
             index: [this.options.indexPrefix + VARIANT_INDEX_NAME],
         });
         return result;
@@ -376,9 +380,9 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         updateProductScript: { source: string; params?: any },
         updateVariantScript: { source: string; params?: any },
     ): Promise<boolean> {
-        const result1 = await this.client.updateByQuery(
-            {
-                index: this.options.indexPrefix + indexName,
+        const result1 = await this.adapter.updateByQuery({
+            index: this.options.indexPrefix + indexName,
+            body: {
                 script: updateProductScript,
                 query: {
                     term: {
@@ -386,18 +390,17 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                     },
                 },
             },
-            { meta: true },
-        );
+        });
 
         if (result1.body.failures) {
             for (const failure of result1.body.failures) {
-                Logger.error(`${failure.cause.type}: ${failure.cause.reason as string}`, loggerCtx);
+                Logger.error(`${failure.cause.type}: ${failure.cause.reason}`, loggerCtx);
             }
         }
 
-        const result2 = await this.client.updateByQuery(
-            {
-                index: this.options.indexPrefix + indexName,
+        const result2 = await this.adapter.updateByQuery({
+            index: this.options.indexPrefix + indexName,
+            body: {
                 script: updateVariantScript,
                 query: {
                     term: {
@@ -405,12 +408,11 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                     },
                 },
             },
-            { meta: true },
-        );
+        });
 
         if (result2.body.failures) {
             for (const failure of result2.body.failures) {
-                Logger.error(`${failure.cause.type}: ${failure.cause.reason as string}`, loggerCtx);
+                Logger.error(`${failure.cause.type}: ${failure.cause.reason}`, loggerCtx);
             }
         }
 
@@ -425,31 +427,22 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
     private async switchAlias(reindexVariantAliasName: string, variantIndexName: string): Promise<void> {
         try {
-            const reindexVariantAliasExist = await this.client.indices.existsAlias(
-                {
-                    name: reindexVariantAliasName,
-                },
-                { meta: true },
-            );
-            if (reindexVariantAliasExist) {
+            const reindexVariantAliasExist = await this.adapter.indices.existsAlias({
+                name: reindexVariantAliasName,
+            });
+            if (reindexVariantAliasExist.body) {
                 const reindexVariantIndexName = await getIndexNameByAlias(
-                    this.client,
+                    this.adapter,
                     reindexVariantAliasName,
                 );
-                const originalVariantAliasExist = await this.client.indices.existsAlias(
-                    {
-                        name: variantIndexName,
-                    },
-                    { meta: true },
-                );
-                const originalVariantIndexExist = await this.client.indices.exists(
-                    {
-                        index: variantIndexName,
-                    },
-                    { meta: true },
-                );
+                const originalVariantAliasExist = await this.adapter.indices.existsAlias({
+                    name: variantIndexName,
+                });
+                const originalVariantIndexExist = await this.adapter.indices.exists({
+                    index: variantIndexName,
+                });
 
-                const originalVariantIndexName = await getIndexNameByAlias(this.client, variantIndexName);
+                const originalVariantIndexName = await getIndexNameByAlias(this.adapter, variantIndexName);
 
                 const actions = [
                     {
@@ -474,17 +467,17 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                         },
                     });
                 } else if (originalVariantIndexExist.body) {
-                    await this.client.indices.delete({
+                    await this.adapter.indices.delete({
                         index: [variantIndexName],
                     });
                 }
 
-                await this.client.indices.updateAliases({
-                    actions,
+                await this.adapter.indices.updateAliases({
+                    body: { actions },
                 });
 
                 if (originalVariantAliasExist.body && originalVariantIndexName) {
-                    await this.client.indices.delete({
+                    await this.adapter.indices.delete({
                         index: [originalVariantIndexName],
                     });
                 }
@@ -492,19 +485,15 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         } catch (e: any) {
             Logger.error('Could not switch indexes');
         } finally {
-            const reindexVariantAliasExist = await this.client.indices.existsAlias(
-                {
-                    name: reindexVariantAliasName,
-                },
-                { meta: true },
-            );
+            const reindexVariantAliasExist = await this.adapter.indices.existsAlias({
+                name: reindexVariantAliasName,
+            });
             if (reindexVariantAliasExist.body) {
-                const reindexVariantAliasResult = await this.client.indices.getAlias(
-                    { name: reindexVariantAliasName },
-                    { meta: true },
-                );
+                const reindexVariantAliasResult = await this.adapter.indices.getAlias({
+                    name: reindexVariantAliasName,
+                });
                 const reindexVariantIndexName = Object.keys(reindexVariantAliasResult.body)[0];
-                await this.client.indices.delete({
+                await this.adapter.indices.delete({
                     index: [reindexVariantIndexName],
                 });
             }
@@ -857,14 +846,11 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         }
         try {
             const fullIndexName = this.options.indexPrefix + indexName;
-            const { body } = await this.client.bulk(
-                {
-                    refresh: true,
-                    index: fullIndexName,
-                    body: operations,
-                },
-                { meta: true },
-            );
+            const { body } = await this.adapter.bulk({
+                refresh: true,
+                index: fullIndexName,
+                body: operations,
+            });
 
             if (body.errors) {
                 Logger.error(

@@ -1,4 +1,4 @@
-import { ClientOptions } from '@elastic/elasticsearch';
+import type { SearchClientAdapter } from './adapter';
 import {
     DeepRequired,
     EntityRelationPaths,
@@ -30,40 +30,47 @@ import {
 export interface ElasticsearchOptions {
     /**
      * @description
-     * The host of the Elasticsearch server. May also be specified in `clientOptions.node`.
+     * Factory that produces a {@link SearchClientAdapter} on demand.
      *
-     * @default 'http://localhost'
+     * The plugin invokes this factory **once per NestJS provider** that
+     * needs a search backend — currently the read-side `ElasticsearchService`
+     * and the write-side `ElasticsearchIndexerController`. Each provider
+     * therefore owns an independent client / connection pool, so tearing
+     * one down during `onModuleDestroy` cannot starve in-flight requests
+     * on the other. A single shared instance would be torn down twice and
+     * take both providers offline; hence the factory shape.
+     *
+     * The typical call site is a thin arrow wrapping one of the first-party
+     * factories, e.g.:
+     *
+     * @example
+     * ```ts
+     * ElasticsearchPlugin.init({
+     *   adapter: () => createElasticsearchAdapter({ host, port }),
+     * });
+     * ```
+     *
+     * Backend-specific configuration (host, port, auth, AWS SigV4, etc.)
+     * lives on the inner factory, so swapping backends only touches the
+     * factory call and none of the shared plugin options below.
      */
-    host?: string;
+    adapter: () => SearchClientAdapter;
     /**
      * @description
-     * The port of the Elasticsearch server. May also be specified in `clientOptions.node`.
-     *
-     * @default 9200
-     */
-    port?: number;
-    /**
-     * @description
-     * Maximum amount of attempts made to connect to the ElasticSearch server on startup.
+     * Maximum amount of attempts made to connect to the search server on
+     * startup.
      *
      * @default 10
      */
     connectionAttempts?: number;
     /**
      * @description
-     * Interval in milliseconds between attempts to connect to the ElasticSearch server on startup.
+     * Interval in milliseconds between attempts to connect to the search
+     * server on startup.
      *
      * @default 5000
      */
     connectionAttemptInterval?: number;
-    /**
-     * @description
-     * Options to pass directly to the
-     * [Elasticsearch Node.js client](https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/index.html). For example, to
-     * set authentication or other more advanced options.
-     * Note that if the `node` or `nodes` option is specified, it will override the values provided in the `host` and `port` options.
-     */
-    clientOptions?: ClientOptions;
     /**
      * @description
      * Prefix for the indices created by the plugin.
@@ -711,13 +718,18 @@ export interface BoostFieldsConfig {
     sku?: number;
 }
 
-export type ElasticsearchRuntimeOptions = DeepRequired<Omit<ElasticsearchOptions, 'clientOptions'>> & {
-    clientOptions?: ClientOptions;
+export type ElasticsearchRuntimeOptions = DeepRequired<Omit<ElasticsearchOptions, 'adapter'>> & {
+    adapter: () => SearchClientAdapter;
 };
 
+// A sentinel adapter-factory placeholder; real factories are required from
+// the plugin consumer via the `adapter` option, so the defaults tree just
+// needs *some* value of the right type for the deepmerge to work. It is
+// always overwritten by the user-supplied factory in `mergeWithDefaults`.
+const ADAPTER_PLACEHOLDER: () => SearchClientAdapter = () => ({}) as unknown as SearchClientAdapter;
+
 export const defaultOptions: ElasticsearchRuntimeOptions = {
-    host: 'http://localhost',
-    port: 9200,
+    adapter: ADAPTER_PLACEHOLDER,
     connectionAttempts: 10,
     connectionAttemptInterval: 5000,
     indexPrefix: 'vendure-',
@@ -751,7 +763,15 @@ export const defaultOptions: ElasticsearchRuntimeOptions = {
 };
 
 export function mergeWithDefaults(userOptions: ElasticsearchOptions): ElasticsearchRuntimeOptions {
-    const { clientOptions, ...pluginOptions } = userOptions;
+    if (!userOptions.adapter) {
+        throw new Error(
+            'ElasticsearchPlugin.init requires an `adapter` option. ' +
+                'Use createElasticsearchAdapter() or createOpenSearchAdapter() to build one.',
+        );
+    }
+    const { adapter, ...pluginOptions } = userOptions;
     const merged = deepmerge(defaultOptions, pluginOptions) as ElasticsearchRuntimeOptions;
-    return { ...merged, clientOptions };
+    // deepmerge would descend into the adapter instance; we want to carry the
+    // *original* adapter reference through untouched.
+    return { ...merged, adapter };
 }

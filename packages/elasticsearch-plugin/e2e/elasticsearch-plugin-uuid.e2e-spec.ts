@@ -5,27 +5,27 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
-import { searchProductsShopDocument } from './graphql/shop-definitions';
-import { awaitRunningJobs } from './await-running-jobs';
 import { ElasticsearchPlugin } from '../src/plugin';
 
+import { awaitRunningJobs } from './await-running-jobs';
+import { buildAdapterForBackend } from './build-adapter-for-backend';
 import { graphql } from './graphql/graphql-admin';
 import { graphql as shopGraphql } from './graphql/graphql-shop';
+import { searchProductsShopDocument } from './graphql/shop-definitions';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { elasticsearchHost, elasticsearchPort } = require('./constants');
+
+const { searchBackend } = require('./constants');
 
 // https://github.com/vendurehq/vendure/issues/494
-describe('Elasticsearch plugin with UuidIdStrategy', () => {
+describe(`Elasticsearch plugin with UuidIdStrategy [${searchBackend as string}]`, () => {
     const { server, adminClient, shopClient } = createTestEnvironment(
         mergeConfig(testConfig(), {
             entityOptions: { entityIdStrategy: new UuidIdStrategy() },
             // logger: new DefaultLogger({ level: LogLevel.Info }),
             plugins: [
                 ElasticsearchPlugin.init({
-                    indexPrefix: 'e2e-uuid-tests',
-                    port: elasticsearchPort,
-                    host: elasticsearchHost,
+                    indexPrefix: `e2e-uuid-tests-${searchBackend as string}-`,
+                    adapter: buildAdapterForBackend(),
                 }),
                 DefaultJobQueuePlugin,
             ],
@@ -48,7 +48,7 @@ describe('Elasticsearch plugin with UuidIdStrategy', () => {
 
     afterAll(async () => {
         await server.destroy();
-    });
+    }, TEST_SETUP_TIMEOUT_MS);
 
     it('no term or filters', async () => {
         const { search } = await shopClient.query(searchProductsShopDocument, {

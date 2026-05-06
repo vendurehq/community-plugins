@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion, no-console */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { CurrencyCode, GlobalFlag, JobState, SortOrder } from '@vendure/common/lib/generated-types';
 import { pick } from '@vendure/common/lib/pick';
 import {
@@ -16,29 +16,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
-import {
-    assignProductToChannelDocument,
-    assignProductVariantToChannelDocument,
-    createChannelDocument,
-    createCollectionDocument,
-    createFacetDocument,
-    createProductDocument,
-    createProductVariantsDocument,
-    deleteAssetDocument,
-    deleteProductDocument,
-    deleteProductVariantDocument,
-    removeProductFromChannelDocument,
-    removeProductVariantFromChannelDocument,
-    updateAssetDocument,
-    updateCollectionDocument,
-    updateProductDocument,
-    updateProductVariantsDocument,
-    updateTaxRateDocument,
-} from './graphql/shared-definitions';
-import { searchProductsShopDocument } from './graphql/shop-definitions';
-import { awaitRunningJobs } from './await-running-jobs';
 import { ElasticsearchPlugin } from '../src/plugin';
 
+import { awaitRunningJobs } from './await-running-jobs';
+import { buildAdapterForBackend } from './build-adapter-for-backend';
 import {
     doAdminSearchQuery,
     dropElasticIndices,
@@ -63,16 +44,40 @@ import {
     testSinglePrices,
 } from './e2e-helpers';
 import { graphql, ResultOf } from './graphql/graphql-admin';
+import {
+    assignProductToChannelDocument,
+    assignProductVariantToChannelDocument,
+    createChannelDocument,
+    createCollectionDocument,
+    createFacetDocument,
+    createProductDocument,
+    createProductVariantsDocument,
+    deleteAssetDocument,
+    deleteProductDocument,
+    deleteProductVariantDocument,
+    removeProductFromChannelDocument,
+    removeProductVariantFromChannelDocument,
+    updateAssetDocument,
+    updateCollectionDocument,
+    updateProductDocument,
+    updateProductVariantsDocument,
+    updateTaxRateDocument,
+} from './graphql/shared-definitions';
+import { searchProductsShopDocument } from './graphql/shop-definitions';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { elasticsearchHost, elasticsearchPort } = require('./constants');
+
+
+const { searchBackend } = require('./constants');
 
 type CreateChannelResult = NonNullable<ResultOf<typeof createChannelDocument>['createChannel']>;
 type ChannelFragment = Extract<CreateChannelResult, { id: string }>;
 
-const INDEX_PREFIX = 'e2e-tests';
+// Scope the prefix per backend so parallel/consecutive ES+OS runs never see
+// each other's indices. Stale state from one run would otherwise break the
+// other's assertions.
+const INDEX_PREFIX = `e2e-tests-${searchBackend as string}-`;
 
-describe('Elasticsearch plugin', () => {
+describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
     const { server, adminClient, shopClient } = createTestEnvironment(
         mergeConfig(testConfig(), {
             customFields: {
@@ -87,8 +92,7 @@ describe('Elasticsearch plugin', () => {
             plugins: [
                 ElasticsearchPlugin.init({
                     indexPrefix: INDEX_PREFIX,
-                    port: elasticsearchPort,
-                    host: elasticsearchHost,
+                    adapter: buildAdapterForBackend(),
                     hydrateProductVariantRelations: ['customFields.material', 'stockLevels'],
                     customProductVariantMappings: {
                         inStock: {
@@ -217,7 +221,7 @@ describe('Elasticsearch plugin', () => {
     afterAll(async () => {
         await awaitRunningJobs(adminClient);
         await server.destroy();
-    });
+    }, TEST_SETUP_TIMEOUT_MS);
 
     describe('shop api', () => {
         it('group by product', () => testGroupByProduct(shopClient));

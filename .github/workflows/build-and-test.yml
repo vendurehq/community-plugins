@@ -10,8 +10,10 @@ jobs:
     build:
         runs-on: ubuntu-latest
         strategy:
+            fail-fast: false
             matrix:
                 node-version: [20.x, 22.x]
+                search-backend: [elasticsearch, opensearch]
         services:
             elasticsearch:
                 image: docker.elastic.co/elasticsearch/elasticsearch:9.1.0
@@ -30,6 +32,24 @@ jobs:
                     --health-interval 10s
                     --health-timeout 5s
                     --health-retries 10
+            opensearch:
+                image: opensearchproject/opensearch:3.0.0
+                env:
+                    discovery.type: single-node
+                    cluster.name: opensearch-docker-cluster
+                    node.name: os
+                    bootstrap.memory_lock: 'true'
+                    DISABLE_SECURITY_PLUGIN: 'true'
+                    DISABLE_INSTALL_DEMO_CONFIG: 'true'
+                    OPENSEARCH_JAVA_OPTS: '-Xms512m -Xmx512m'
+                ports:
+                    # Host 9201 -> container 9200 so OS runs alongside ES (which keeps 9200).
+                    - 9201:9200
+                options: >-
+                    --health-cmd "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 20
             redis:
                 image: redis:7.2-alpine
                 ports:
@@ -54,7 +74,9 @@ jobs:
               run: bun run lint
             - name: Run unit tests
               run: bun run test
-            - name: Run e2e tests
+            - name: Run e2e tests (${{ matrix.search-backend }})
               run: bun run e2e
               env:
                   CI: true
+                  SEARCH_BACKEND: ${{ matrix.search-backend }}
+                  E2E_ELASTIC_PORT: ${{ matrix.search-backend == 'opensearch' && '9201' || '9200' }}
