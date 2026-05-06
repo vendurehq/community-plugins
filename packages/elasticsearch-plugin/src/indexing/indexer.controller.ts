@@ -243,11 +243,15 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 const variantIndexName = `${this.options.indexPrefix}${VARIANT_INDEX_NAME}`;
                 const variantIndexNameForReindex = `${VARIANT_INDEX_NAME}-reindex-${reindexTempName}`;
                 const reindexVariantAliasName = `${this.options.indexPrefix}${variantIndexNameForReindex}`;
+                const tempIndexSettings = {
+                    ...this.options.indexSettings,
+                    ...this.options.reindexIndexSettings,
+                };
                 try {
                     await createIndices(
                         this.adapter,
                         this.options.indexPrefix,
-                        this.options.indexSettings,
+                        tempIndexSettings,
                         this.options.indexMappingProperties,
                         true,
                         `-reindex-${reindexTempName}`,
@@ -279,20 +283,78 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                         .take(this.options.reindexProductsChunkSize)
                         .getMany();
 
-                    for (const { id: productId } of productIds) {
-                        await this.updateProductsOperationsOnly(ctx, productId, variantIndexNameForReindex);
-                        finishedProductsCount++;
-                        observer.next({
-                            total: totalProductIds,
-                            completed: Math.min(finishedProductsCount, totalProductIds),
-                            duration: +new Date() - timeStart,
-                        });
+                    const concurrency = Math.max(1, this.options.reindexConcurrency);
+                    const prefetch = await this.loadProductChunkPrefetch(
+                        productIds.map(p => p.id),
+                    );
+                    if (concurrency === 1) {
+                        for (const { id: productId } of productIds) {
+                            await this.updateProductsOperationsOnly(
+                                ctx,
+                                productId,
+                                variantIndexNameForReindex,
+                                false,
+                                prefetch.get(productId),
+                            );
+                            finishedProductsCount++;
+                            observer.next({
+                                total: totalProductIds,
+                                completed: Math.min(finishedProductsCount, totalProductIds),
+                                duration: +new Date() - timeStart,
+                            });
+                        }
+                    } else {
+                        // Each worker gets its own MutableRequestContext so the
+                        // per-product channel mutation (`ctx.setChannel(channel)`)
+                        // can run in parallel without races.
+                        for (let i = 0; i < productIds.length; i += concurrency) {
+                            const window = productIds.slice(i, i + concurrency);
+                            await Promise.all(
+                                window.map(async ({ id: productId }) => {
+                                    const workerCtx = MutableRequestContext.deserialize(rawContext);
+                                    await this.updateProductsOperationsOnly(
+                                        workerCtx,
+                                        productId,
+                                        variantIndexNameForReindex,
+                                        false,
+                                        prefetch.get(productId),
+                                    );
+                                }),
+                            );
+                            finishedProductsCount += window.length;
+                            observer.next({
+                                total: totalProductIds,
+                                completed: Math.min(finishedProductsCount, totalProductIds),
+                                duration: +new Date() - timeStart,
+                            });
+                        }
                     }
 
                     skip += this.options.reindexProductsChunkSize;
 
                     Logger.verbose(`Done ${finishedProductsCount} / ${totalProductIds} products`);
                 } while (productIds.length >= this.options.reindexProductsChunkSize);
+
+                // Restore production-grade settings on the temp index, then refresh it once
+                // before swapping the alias so search queries see a warm index immediately.
+                try {
+                    const reindexFullIndexName = await getIndexNameByAlias(
+                        this.adapter,
+                        reindexVariantAliasName,
+                    );
+                    if (reindexFullIndexName) {
+                        await this.adapter.indices.putSettings({
+                            index: reindexFullIndexName,
+                            body: this.options.reindexRestoreSettings,
+                        });
+                        await this.adapter.indices.refresh({ index: reindexFullIndexName });
+                    }
+                } catch (e: any) {
+                    Logger.error(
+                        `Could not restore index settings before alias swap: ${JSON.stringify(e)}`,
+                        loggerCtx,
+                    );
+                }
 
                 // Switch the index to the new reindexed one
                 await this.switchAlias(reindexVariantAliasName, variantIndexName);
@@ -312,22 +374,28 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         chunkSize: number,
         operations: BulkVariantOperation[],
         index = VARIANT_INDEX_NAME,
+        refresh: boolean = true,
     ): Promise<void> {
         Logger.verbose(
             `Will execute ${operations.length} bulk update operations with index ${index}`,
             loggerCtx,
         );
-        let i;
-        let j;
-        let processedOperation = 0;
-        for (i = 0, j = operations.length; i < j; i += chunkSize) {
-            const operationsChunks = operations.slice(i, i + chunkSize);
-            await this.executeBulkOperations(operationsChunks, index);
-            processedOperation += operationsChunks.length;
 
-            Logger.verbose(
-                `Executing operation chunks ${processedOperation}/${operations.length}`,
-                loggerCtx,
+        const concurrency = refresh ? 1 : Math.max(1, this.options.reindexBulkConcurrency);
+        const chunks: BulkVariantOperation[][] = [];
+        for (let i = 0, j = operations.length; i < j; i += chunkSize) {
+            chunks.push(operations.slice(i, i + chunkSize));
+        }
+        if (concurrency === 1) {
+            for (const chunk of chunks) {
+                await this.executeBulkOperations(chunk, index, refresh);
+            }
+            return;
+        }
+        for (let i = 0; i < chunks.length; i += concurrency) {
+            const window = chunks.slice(i, i + concurrency);
+            await Promise.all(
+                window.map(chunk => this.executeBulkOperations(chunk, index, refresh)),
             );
         }
     }
@@ -500,42 +568,85 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         }
     }
 
+    private async loadProductChunkPrefetch(
+        productIds: ID[],
+    ): Promise<Map<ID, { product: Product; variants: ProductVariant[] }>> {
+        const result = new Map<ID, { product: Product; variants: ProductVariant[] }>();
+        if (productIds.length === 0) return result;
+
+        const productRepo = this.connection.rawConnection.getRepository(Product);
+        const variantRepo = this.connection.rawConnection.getRepository(ProductVariant);
+
+        const [products, variants] = await Promise.all([
+            productRepo.find({
+                where: { id: In(productIds), deletedAt: IsNull() },
+                relations: this.productRelations,
+            }),
+            variantRepo.find({
+                where: { productId: In(productIds), deletedAt: IsNull() },
+                relations: this.variantRelations,
+                order: { id: 'ASC' },
+            }),
+        ]);
+
+        const variantsByProduct = new Map<ID, ProductVariant[]>();
+        for (const v of variants) {
+            const list = variantsByProduct.get(v.productId) ?? [];
+            list.push(v);
+            variantsByProduct.set(v.productId, list);
+        }
+
+        for (const product of products) {
+            result.set(product.id, {
+                product,
+                variants: variantsByProduct.get(product.id) ?? [],
+            });
+        }
+        return result;
+    }
+
     private async updateProductsOperationsOnly(
         ctx: MutableRequestContext,
         productId: ID,
         index = VARIANT_INDEX_NAME,
+        refresh: boolean = true,
+        prefetched?: { product: Product; variants: ProductVariant[] },
     ): Promise<void> {
         let operations: BulkVariantOperation[] = [];
-        let product: Product | undefined;
-        try {
-            product = await this.connection
-                .getRepository(ctx, Product)
-                .find({
-                    where: { id: productId, deletedAt: IsNull() },
-                    relations: this.productRelations,
-                })
-                .then(result => result[0] ?? undefined);
-        } catch (e: any) {
-            Logger.error(e.message, loggerCtx, e.stack);
-            throw e;
+        let product: Product | undefined = prefetched?.product;
+        if (!product) {
+            try {
+                product = await this.connection
+                    .getRepository(ctx, Product)
+                    .find({
+                        where: { id: productId, deletedAt: IsNull() },
+                        relations: this.productRelations,
+                    })
+                    .then(result => result[0] ?? undefined);
+            } catch (e: any) {
+                Logger.error(e.message, loggerCtx, e.stack);
+                throw e;
+            }
         }
         if (!product) {
             return;
         }
-        let updatedProductVariants: ProductVariant[] = [];
-        try {
-            updatedProductVariants = await this.connection.rawConnection.getRepository(ProductVariant).find({
-                relations: this.variantRelations,
-                where: {
-                    productId,
-                    deletedAt: IsNull(),
-                },
-                order: {
-                    id: 'ASC',
-                },
-            });
-        } catch (e: any) {
-            Logger.error(e.message, loggerCtx, e.stack);
+        let updatedProductVariants: ProductVariant[] = prefetched?.variants ?? [];
+        if (!prefetched) {
+            try {
+                updatedProductVariants = await this.connection.rawConnection.getRepository(ProductVariant).find({
+                    relations: this.variantRelations,
+                    where: {
+                        productId,
+                        deletedAt: IsNull(),
+                    },
+                    order: {
+                        id: 'ASC',
+                    },
+                });
+            } catch (e: any) {
+                Logger.error(e.message, loggerCtx, e.stack);
+            }
         }
 
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -552,6 +663,23 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
         const uniqueLanguageVariants = unique(languageVariants);
         const originalChannel = ctx.channel;
+
+        let pendingBytes = 0;
+        const sizeLimit = this.options.reindexBulkOperationSizeLimit;
+        const byteLimit = this.options.reindexBulkSizeBytes;
+        const shouldFlush = () => operations.length >= sizeLimit || pendingBytes >= byteLimit;
+        const trackBytes = (...ops: BulkVariantOperation[]) => {
+            for (const op of ops) {
+                pendingBytes += Buffer.byteLength(JSON.stringify(op.operation));
+            }
+        };
+        const flushAccumulated = async () => {
+            if (operations.length === 0) return;
+            await this.executeBulkOperationsByChunks(sizeLimit, operations, index, refresh);
+            operations = [];
+            pendingBytes = 0;
+        };
+
         for (const channel of product.channels) {
             ctx.setChannel(channel);
             const variantsInChannel = updatedProductVariants.filter(v =>
@@ -563,7 +691,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
             for (const languageCode of uniqueLanguageVariants) {
                 if (variantsInChannel.length) {
                     for (const variant of variantsInChannel) {
-                        operations.push(
+                        const pair: BulkVariantOperation[] = [
                             {
                                 index: VARIANT_INDEX_NAME,
                                 operation: {
@@ -588,20 +716,16 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                                     doc_as_upsert: true,
                                 },
                             },
-                        );
+                        ];
+                        operations.push(...pair);
+                        trackBytes(...pair);
 
-                        if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                            // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                            await this.executeBulkOperationsByChunks(
-                                this.options.reindexBulkOperationSizeLimit,
-                                operations,
-                                index,
-                            );
-                            operations = [];
+                        if (shouldFlush()) {
+                            await flushAccumulated();
                         }
                     }
                 } else {
-                    operations.push(
+                    const pair: BulkVariantOperation[] = [
                         {
                             index: VARIANT_INDEX_NAME,
                             operation: {
@@ -621,16 +745,12 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                                 doc_as_upsert: true,
                             },
                         },
-                    );
+                    ];
+                    operations.push(...pair);
+                    trackBytes(...pair);
                 }
-                if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                    // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                    await this.executeBulkOperationsByChunks(
-                        this.options.reindexBulkOperationSizeLimit,
-                        operations,
-                        index,
-                    );
-                    operations = [];
+                if (shouldFlush()) {
+                    await flushAccumulated();
                 }
             }
         }
@@ -641,6 +761,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
             this.options.reindexBulkOperationSizeLimit,
             operations,
             index,
+            refresh,
         );
 
         return;
@@ -827,19 +948,24 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         return unique(variants.map(v => v.product.id));
     }
 
-    private async executeBulkOperations(operations: BulkVariantOperation[], indexName = VARIANT_INDEX_NAME) {
+    private async executeBulkOperations(
+        operations: BulkVariantOperation[],
+        indexName = VARIANT_INDEX_NAME,
+        refresh: boolean = true,
+    ) {
         const variantOperations: Array<BulkOperation | BulkOperationDoc<VariantIndexItem>> = [];
 
         for (const operation of operations) {
             variantOperations.push(operation.operation);
         }
 
-        return Promise.all([this.runBulkOperationsOnIndex(indexName, variantOperations)]);
+        return this.runBulkOperationsOnIndex(indexName, variantOperations, refresh);
     }
 
     private async runBulkOperationsOnIndex(
         indexName: string,
         operations: Array<BulkOperation | BulkOperationDoc<VariantIndexItem | ProductIndexItem>>,
+        refresh: boolean = true,
     ) {
         if (operations.length === 0) {
             return;
@@ -847,7 +973,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         try {
             const fullIndexName = this.options.indexPrefix + indexName;
             const { body } = await this.adapter.bulk({
-                refresh: true,
+                refresh,
                 index: fullIndexName,
                 body: operations,
             });

@@ -117,6 +117,29 @@ export interface ElasticsearchOptions {
     indexSettings?: object;
     /**
      * @description
+     * Index settings applied to the **temporary index** used during a full reindex.
+     * Merged on top of `indexSettings`. Defaults disable refresh and replicas during
+     * the reindex bulk-load and switch translog to `async` durability — Elasticsearch's
+     * recommended bulk-load profile. The temporary index is reverted to production-grade
+     * settings (refresh_interval restored, replicas restored) and refreshed once before
+     * the alias swap, so search consumers see the new index already-warm.
+     *
+     * @default
+     * { refresh_interval: '-1', number_of_replicas: 0, translog: { durability: 'async' } }
+     */
+    reindexIndexSettings?: object;
+    /**
+     * @description
+     * Settings to restore on the temporary reindex index immediately before the alias
+     * swap. Use this to override the production refresh interval or replica count when
+     * they should differ from the defaults (`refresh_interval: 1s`, `number_of_replicas: 1`).
+     *
+     * @default
+     * { refresh_interval: '1s', number_of_replicas: 1 }
+     */
+    reindexRestoreSettings?: object;
+    /**
+     * @description
      * This option allow to redefine or define new properties in mapping. More about elastic
      * [mapping](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html)
      * After changing this option indices will be recreated.
@@ -177,10 +200,47 @@ export interface ElasticsearchOptions {
      * index operations. This option sets the maximum number of operations in the memory buffer before a
      * bulk operation is executed.
      *
-     * @default 3000
+     * @default 5000
      * @since 2.1.7
      */
     reindexBulkOperationSizeLimit?: number;
+    /**
+     * @description
+     * Number of bulk requests sent in parallel during a full reindex. Higher values
+     * trade more memory + ES node load for faster reindex throughput. Set to `1` to
+     * preserve the historical sequential behaviour.
+     *
+     * @default 4
+     */
+    reindexBulkConcurrency?: number;
+    /**
+     * @description
+     * Soft byte-size limit for an individual reindex bulk payload. When the buffered
+     * operations exceed this size we flush early — this keeps each request well under
+     * the ES `http.max_content_length` limit even when individual variant docs are
+     * large (custom mappings, big translation arrays, etc). `reindexBulkOperationSizeLimit`
+     * still applies as the hard upper bound on the operation count.
+     *
+     * @default 5_000_000  (≈ 5 MB)
+     */
+    reindexBulkSizeBytes?: number;
+    /**
+     * @description
+     * Number of products processed in parallel during a full reindex. Each worker
+     * runs `updateProductsOperationsOnly` on a different `productId` against the
+     * shared temporary index. Bumping this is a large win on big catalogues — DB
+     * variant-fetch and channel/language doc-build dominate the loop, and ES has
+     * spare capacity for concurrent bulks once `refresh: false` is in play.
+     *
+     * Defaults to `1` (sequential, historical behaviour). Raising to `4`-`8` has
+     * shown 2-5× speed-ups on production-scale catalogues, but the plugin shares
+     * entity instances (notably `channels`) across products via TypeORM's identity
+     * map, so concurrent workers can race on shared entity state. Benchmark
+     * carefully and run the full e2e suite at the chosen value before deploying.
+     *
+     * @default 1
+     */
+    reindexConcurrency?: number;
     /**
      * @description
      * Configuration of the internal Elasticsearch query.
@@ -734,9 +794,21 @@ export const defaultOptions: ElasticsearchRuntimeOptions = {
     connectionAttemptInterval: 5000,
     indexPrefix: 'vendure-',
     indexSettings: {},
+    reindexIndexSettings: {
+        refresh_interval: '-1',
+        number_of_replicas: 0,
+        translog: { durability: 'async' },
+    },
+    reindexRestoreSettings: {
+        refresh_interval: '1s',
+        number_of_replicas: 1,
+    },
     indexMappingProperties: {},
     reindexProductsChunkSize: 2500,
-    reindexBulkOperationSizeLimit: 3000,
+    reindexBulkOperationSizeLimit: 5000,
+    reindexBulkConcurrency: 4,
+    reindexBulkSizeBytes: 5_000_000,
+    reindexConcurrency: 1,
     searchConfig: {
         facetValueMaxSize: 50,
         collectionMaxSize: 50,

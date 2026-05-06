@@ -49,6 +49,7 @@ export interface SearchClientAdapter {
         getMapping(params: { index: string }): Promise<{ body: Record<string, any> }>;
         getSettings(params: { index: string }): Promise<{ body: Record<string, any> }>;
         putAlias(params: { index: string; name: string; body?: any }): Promise<{ body: any }>;
+        putSettings(params: { index: string | string[]; body: any }): Promise<{ body: any }>;
         refresh(params: { index: string | string[] }): Promise<{ body: any }>;
         updateAliases(params: { body: any }): Promise<{ body: any }>;
     };

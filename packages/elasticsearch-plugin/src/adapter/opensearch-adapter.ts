@@ -84,6 +84,10 @@ export class OpenSearchAdapter implements SearchClientAdapter {
                 const result = await this.client.indices.putAlias({ index, name, body });
                 return { body: result.body };
             },
+            putSettings: async ({ index, body }) => {
+                const result = await this.client.indices.putSettings({ index, body });
+                return { body: result.body };
+            },
             refresh: async ({ index }) => {
                 const result = await this.client.indices.refresh({ index });
                 return { body: result.body };

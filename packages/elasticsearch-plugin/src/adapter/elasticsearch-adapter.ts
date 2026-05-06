@@ -105,6 +105,13 @@ export class ElasticsearchAdapter implements SearchClientAdapter {
                 );
                 return { body: result.body };
             },
+            putSettings: async ({ index, body }) => {
+                const result = await this.client.indices.putSettings(
+                    { index, body },
+                    { meta: true },
+                );
+                return { body: result.body };
+            },
             refresh: async ({ index }) => {
                 const result = await this.client.indices.refresh({ index }, { meta: true });
                 return { body: result.body };
