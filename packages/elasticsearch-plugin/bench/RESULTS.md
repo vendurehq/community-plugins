@@ -1,4 +1,38 @@
-# Reindex-bench resultat (synthetic e2e fixture)
+# Reindex-bench resultat
+
+## Real-data bench (bov MariaDB, 51 593 docs)
+
+Dataset: bov_ecom_prod produktion (8 797 produkter, 111 386 varianter; ~51 593 indexerade
+docs efter (variant × channel × language)-fan-out). MariaDB 11.3.2 + ES 7.17.18 +
+Redis 7 i Docker, lokalt på Apple Silicon. 1 reindex per konfiguration (varje körning
+är dyr: ~8-15 min). Dataset frusen mellan körningar.
+
+| Konfiguration | Tid | Δ vs baseline | docs i index | snapshot diff |
+|---|---|---|---|---|
+| `bov-baseline` (`@vendure/elasticsearch-plugin@3.5.5` från npm, default options) | **866 s (14 m 26 s)** | — | 51 593 | — |
+| `bov-optimized` (S1+A6/A7+S2+S3, `reindexConcurrency: 8`, `reindexBulkConcurrency: 4`) | **495 s (8 m 14 s)** | **-43 % (1.75×)** | 51 593 | **identisk (0 byte)** |
+
+Byggda artefakter + skript under [`bench/`](.). Snapshot-NDJSON är 4 GB per
+körning — uteslutna från git via `bench/.gitignore`, reproducerbara med
+`scripts/snapshot-bov.mjs`.
+
+### Varför inte 5-10× på bov?
+
+- Bov har 8 797 produkter × ~6 docs/produkt ≈ 52k docs (inte 50k variants direkt).
+  Variant-fetch dominerar mindre på den volymen än antaget i plan.
+- Bovs `customProductMappings` (`featuredAssets`, `facetValueName`, `featuredAsset`,
+  `productSchema` etc — se `bov-ecom-src/src/elastic-search-config.ts`) är tunga och
+  kör per (produkt × kanal × språk). CPU-bunden, parallelliseringen flaskhalsas på
+  Node single-thread.
+- MariaDB single-instans + 8 concurrent workers → connection-pool serialiseras delvis.
+  S2 ger nominellt ~3-4× på CPU men effekten kapas av DB-kontention.
+- ES 7.17 single-node + dev-tier-resurser. Med replicas och fler shards skalar S1+A6/A7
+  bättre.
+
+Trots det: **−371 s (−43 %)** på en typisk svensk e-handelskatalog är substantiellt och
+linjärt med produktionsstorlek (förväntad bättre vinst på ≥5 språk eller ≥3 kanaler).
+
+## Synthetic e2e-bench (regression-gate)
 
 Dataset: `e2e/fixtures/e2e-products-full.csv` (35 produkter, 1 kanal, 1 språk → 35 docs).
 ES 7.17.18 single-node container. 5 reindex-körningar per branch, median.
