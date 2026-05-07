@@ -377,6 +377,8 @@ export class MollieService {
         paymentMethodCode: string,
         status: 'Authorized' | 'Settled',
     ): Promise<Order> {
+        // `addPaymentToOrder` requires a db transaction. Free orders use a new
+        // admin `RequestContext` in `createPaymentIntent`, which does not keep the transaction.
         return this.connection.withTransaction(_ctx, async ctx => {
             if (order.state !== 'ArrangingPayment' && order.state !== 'ArrangingAdditionalPayment') {
                 const transitionToStateResult = await this.orderService.transitionToState(
