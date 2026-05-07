@@ -370,17 +370,17 @@ export class MollieService {
      * Add payment to order. Can be settled or authorized depending on the payment method.
      */
     async addPayment(
-        ctx: RequestContext,
+        _ctx: RequestContext,
         order: Order,
         amount: number,
         mollieMetadata: Omit<MolliePaymentMetadata, 'status' | 'amount'>,
         paymentMethodCode: string,
         status: 'Authorized' | 'Settled',
     ): Promise<Order> {
-        return this.connection.withTransaction(ctx, async txCtx => {
+        return this.connection.withTransaction(_ctx, async ctx => {
             if (order.state !== 'ArrangingPayment' && order.state !== 'ArrangingAdditionalPayment') {
                 const transitionToStateResult = await this.orderService.transitionToState(
-                    txCtx,
+                    ctx,
                     order.id,
                     'ArrangingPayment',
                 );
@@ -401,7 +401,7 @@ export class MollieService {
                 authorizedAt: mollieMetadata.authorizedAt,
                 paidAt: mollieMetadata.paidAt,
             };
-            const addPaymentToOrderResult = await this.orderService.addPaymentToOrder(txCtx, order.id, {
+            const addPaymentToOrderResult = await this.orderService.addPaymentToOrder(ctx, order.id, {
                 method: paymentMethodCode,
                 metadata,
             });
