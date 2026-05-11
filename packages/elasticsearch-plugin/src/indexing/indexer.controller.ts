@@ -49,7 +49,11 @@ import {
 import { CurrencyAwareMutableRequestContext } from './currency-aware-request-context';
 import { buildVariantDocId, resolveChannelIndexCurrencies } from './indexing-id-helpers';
 import { createIndices, getIndexNameByAlias } from './indexing-utils';
-import { shouldSkipVariantForCurrency } from './variant-price-utils';
+import {
+    shouldSkipVariantForCurrency,
+    snapshotProductPriceAggregates,
+    snapshotVariantPrice,
+} from './variant-price-utils';
 
 export const defaultProductRelations: Array<EntityRelationPaths<Product>> = [
     'featuredAsset',
@@ -933,6 +937,14 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         languageCode: LanguageCode,
     ): Promise<VariantIndexItem> {
         try {
+            // Pin the variant + product price aggregates upfront. `applyChannelPriceAndTax`
+            // mutates the same variant instances in place across (channel, currency)
+            // iterations in `updateProductsOperationsOnly`; snapshotting before any
+            // awaitable work ensures the produced index item reflects the state at
+            // entry, even if a future refactor defers bulk-op composition.
+            const variantSnapshot = snapshotVariantPrice(v);
+            const productPriceSnapshot = snapshotProductPriceAggregates(variants);
+
             const productAsset = v.product.featuredAsset;
             const variantAsset = v.featuredAsset;
             const productTranslation = this.getTranslation(v.product, languageCode);
@@ -946,8 +958,6 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 ],
                 [] as Array<Translation<Collection>>,
             );
-            const prices = variants.map(variant => variant.price);
-            const pricesWithTax = variants.map(variant => variant.priceWithTax);
 
             const item: VariantIndexItem = {
                 channelId: ctx.channelId,
@@ -966,9 +976,9 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 productVariantPreviewFocalPoint: variantAsset
                     ? variantAsset.focalPoint || undefined
                     : undefined,
-                price: v.price,
-                priceWithTax: v.priceWithTax,
-                currencyCode: v.currencyCode,
+                price: variantSnapshot.price,
+                priceWithTax: variantSnapshot.priceWithTax,
+                currencyCode: variantSnapshot.currencyCode,
                 description: productTranslation.description,
                 facetIds: this.getFacetIds([v]),
                 channelIds: v.channels.map(c => c.id),
@@ -977,10 +987,10 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 collectionSlugs: collectionTranslations.map(c => c.slug),
                 enabled: v.enabled && v.product.enabled,
                 productEnabled: variants.some(variant => variant.enabled) && v.product.enabled,
-                productPriceMin: Math.min(...prices),
-                productPriceMax: Math.max(...prices),
-                productPriceWithTaxMin: Math.min(...pricesWithTax),
-                productPriceWithTaxMax: Math.max(...pricesWithTax),
+                productPriceMin: Math.min(...productPriceSnapshot.prices),
+                productPriceMax: Math.max(...productPriceSnapshot.prices),
+                productPriceWithTaxMin: Math.min(...productPriceSnapshot.pricesWithTax),
+                productPriceWithTaxMax: Math.max(...productPriceSnapshot.pricesWithTax),
                 productFacetIds: this.getFacetIds(variants),
                 productFacetValueIds: this.getFacetValueIds(variants),
                 productCollectionIds: unique(
