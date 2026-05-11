@@ -1369,10 +1369,98 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
                 });
             });
 
-            afterAll(async() => {
+            afterAll(() => {
                 adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
                 shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
             })
+        });
+
+        describe('missing currency price handling', () => {
+            // Channel exposes [GBP, EUR] but the assigned variants are explicitly priced
+            // only in GBP. The indexer must NOT produce phantom EUR documents with
+            // `price: 0`, since they would surface in `currencyCode: EUR` searches and
+            // pollute `sort: { price: ASC }` results.
+            //
+            // T_6 (USB Cable) is used because earlier `admin api > updating the index`
+            // tests disable/mutate/delete T_1..T_5 — picking an untouched product keeps
+            // this block independent of suite ordering.
+            const GBP_ONLY_CHANNEL_TOKEN = 'gbp-only-priced-channel-token';
+            const TEST_PRODUCT_ID = 'T_6';
+            let gbpOnlyChannel: ChannelFragment;
+
+            beforeAll(async () => {
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                const { createChannel } = await adminClient.query(createChannelDocument, {
+                    input: {
+                        code: 'gbp-only-priced-channel',
+                        token: GBP_ONLY_CHANNEL_TOKEN,
+                        defaultLanguageCode: LanguageCode.en,
+                        currencyCode: CurrencyCode.GBP,
+                        availableCurrencyCodes: [CurrencyCode.GBP, CurrencyCode.EUR],
+                        pricesIncludeTax: true,
+                        defaultTaxZoneId: 'T_2',
+                        defaultShippingZoneId: 'T_1',
+                    },
+                });
+                gbpOnlyChannel = createChannel as ChannelFragment;
+
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                await adminClient.query(assignProductToChannelDocument, {
+                    input: { channelId: gbpOnlyChannel.id, productIds: [TEST_PRODUCT_ID] },
+                });
+                await awaitRunningJobs(adminClient);
+
+                // Deliberately do NOT add EUR prices for T_6's variants — only the
+                // implicit GBP price auto-created by assignProductsToChannel exists.
+                await adminClient.query(reindexDocument);
+                await awaitRunningJobs(adminClient);
+            });
+
+            it('returns the GBP-priced variants in a GBP search', async () => {
+                shopClient.setChannelToken(GBP_ONLY_CHANNEL_TOKEN);
+                const result = await shopClient.query(searchGetPricesDocumentWithID, {
+                    input: { groupByProduct: true, take: 5 },
+                });
+                const hit = result.search.items.find(item => item.productId === TEST_PRODUCT_ID);
+                expect(hit).toBeDefined();
+                expect(hit!.currencyCode).toBe('GBP');
+            });
+
+            it('does not return GBP-only variants when searching in EUR (no phantom zero-priced doc)', async () => {
+                shopClient.setChannelToken(GBP_ONLY_CHANNEL_TOKEN);
+                const result = await shopClient.query(
+                    searchGetPricesDocumentWithID,
+                    { input: { groupByProduct: true, take: 5 } },
+                    { currencyCode: CurrencyCode.EUR },
+                );
+                const hit = result.search.items.find(item => item.productId === TEST_PRODUCT_ID);
+                expect(hit).toBeUndefined();
+            });
+
+            it('does not surface a phantom 0-priced variant when sorting EUR results by price ASC', async () => {
+                shopClient.setChannelToken(GBP_ONLY_CHANNEL_TOKEN);
+                const result = await shopClient.query(
+                    searchGetPricesDocumentWithID,
+                    {
+                        input: {
+                            groupByProduct: false,
+                            sort: { price: SortOrder.ASC },
+                            take: 5,
+                        },
+                    },
+                    { currencyCode: CurrencyCode.EUR },
+                );
+                // No T_6 variants should appear at all in the EUR results, regardless
+                // of sort order — the indexer must skip the (variant, EUR) tuple
+                // entirely rather than indexing a `price: 0` placeholder.
+                const hits = result.search.items.filter(item => item.productId === TEST_PRODUCT_ID);
+                expect(hits).toEqual([]);
+            });
+
+            afterAll(() => {
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            });
         });
     });
 
