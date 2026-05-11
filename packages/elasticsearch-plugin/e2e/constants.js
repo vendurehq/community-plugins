@@ -7,7 +7,7 @@ const defaultPorts = {
     opensearch: 9201,
 };
 
-const elasticsearchHost = 'http://127.0.0.1';
+const elasticsearchHost = 'http://elastic';
 const elasticsearchPort = process.env.CI
     ? +(process.env.E2E_ELASTIC_PORT ||
         (searchBackend === 'opensearch'

@@ -247,7 +247,14 @@ describe('buildElasticBody()', () => {
     });
 
     it('collectionIds', () => {
-        const result = buildElasticBody({ collectionIds: ['1', '2'] }, searchConfig, CHANNEL_ID, LanguageCode.en);
+        const result = buildElasticBody(
+            { collectionIds: ['1', '2'] },
+            searchConfig,
+            CHANNEL_ID,
+            LanguageCode.en,
+            undefined,
+            ctx,
+        );
         expect(result.query).toEqual({
             bool: {
                 filter: [CHANNEL_ID_TERM, LANGUAGE_CODE_TERM, { terms: { collectionIds: ['1', '2'] } }],
@@ -277,6 +284,8 @@ describe('buildElasticBody()', () => {
             searchConfig,
             CHANNEL_ID,
             LanguageCode.en,
+            undefined,
+            ctx,
         );
         expect(result.query).toEqual({
             bool: {
