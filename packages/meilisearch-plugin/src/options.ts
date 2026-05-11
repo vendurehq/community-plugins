@@ -199,6 +199,10 @@ export interface MeilisearchOptions {
      * synonymous words. This allows users to find products regardless of
      * which synonym they use.
      *
+     * Synonyms are **automatically expanded bidirectionally** — you only need
+     * to define one direction (e.g. `laptop: ['notebook']`) and the reverse
+     * mapping (`notebook: ['laptop']`) is generated automatically.
+     *
      * @example
      * ```ts
      * synonyms: {

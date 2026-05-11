@@ -233,6 +233,52 @@ Lower values = more fuzzy. Higher values = more strict.
 | Default | 5 | 9 |
 | Strict | 6 | 10 |
 
+## Synonyms
+
+Synonyms let users find products regardless of which word they use. Define synonym groups and the plugin **automatically expands them bidirectionally** — you only need to define one direction:
+
+```ts
+synonyms: {
+  laptop: ['notebook', 'portable computer'],
+  shoe: ['sneaker', 'footwear'],
+}
+```
+
+The plugin generates all reverse mappings automatically, so searching "notebook" finds laptops and searching "laptop" finds notebooks. No need to manually define both directions.
+
+Synonyms are word-level, not product-level — a small set of 20-30 synonym groups covers your entire catalog regardless of size.
+
+## Highlighting & Cropping
+
+Configure highlighting and cropping in `searchConfig` to help frontends show users *why* a result matched:
+
+```ts
+searchConfig: {
+  attributesToHighlight: ['productName', 'description'],
+  highlightPreTag: '<mark>',
+  highlightPostTag: '</mark>',
+  attributesToCrop: ['description'],
+  cropLength: 30,
+}
+```
+
+Results include `formattedProductName` and `formattedDescription` fields with matched terms wrapped in highlight tags and long text cropped around the match:
+
+```graphql
+{
+  search(input: { term: "carbon" }) {
+    items {
+      productName              # "Road Bike"
+      formattedProductName     # "Road Bike"
+      description              # full raw description
+      formattedDescription     # "…full <mark>carbon</mark> chassis with cyclocross-specific…"
+    }
+  }
+}
+```
+
+These fields are `null` when highlighting/cropping is not configured — frontends can fall back to `productName` / `description`.
+
 ## Price Range Buckets
 
 The `priceRangeBucketInterval` controls how search results are grouped into price bands in the response. This data powers price filter UIs:
