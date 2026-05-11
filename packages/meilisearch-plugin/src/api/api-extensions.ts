@@ -20,6 +20,8 @@ export function generateSchemaExtensions(options: MeilisearchOptions): DocumentN
 
         extend type SearchResult {
             inStock: Boolean
+            formattedProductName: String
+            formattedDescription: String
         }
 
         type SearchResponsePriceData {

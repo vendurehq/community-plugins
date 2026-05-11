@@ -573,6 +573,8 @@ export class MeilisearchService implements OnModuleInit {
                 value: source.priceWithTax,
             },
             score: (hit)._rankingScore || 0,
+            formattedProductName: hit._formatted?.productName ?? null,
+            formattedDescription: hit._formatted?.description ?? null,
         };
 
         MeilisearchService.addCustomMappings(
@@ -618,6 +620,8 @@ export class MeilisearchService implements OnModuleInit {
             channelIds: [],
             inStock: source.productInStock,
             score: (hit)._rankingScore || 0,
+            formattedProductName: hit._formatted?.productName ?? null,
+            formattedDescription: hit._formatted?.description ?? null,
         };
         MeilisearchService.addCustomMappings(
             result,

@@ -5,6 +5,38 @@ import { loggerCtx } from '../constants';
 import { MeilisearchRuntimeOptions } from '../options';
 
 /**
+ * Expands a synonym map so that every word in a group maps to every other word
+ * in that group (bidirectional). This means the user only needs to define
+ * `laptop: ['notebook']` and the reverse `notebook: ['laptop']` is generated
+ * automatically.
+ *
+ * Overlapping groups are merged and a word never maps to itself.
+ */
+export function expandSynonymsBidirectional(
+    synonyms: Record<string, string[]>,
+): Record<string, string[]> {
+    const expanded: Record<string, Set<string>> = {};
+    for (const [key, values] of Object.entries(synonyms)) {
+        const group = [key, ...values];
+        for (const word of group) {
+            if (!expanded[word]) {
+                expanded[word] = new Set();
+            }
+            for (const other of group) {
+                if (other !== word) {
+                    expanded[word].add(other);
+                }
+            }
+        }
+    }
+    const result: Record<string, string[]> = {};
+    for (const [word, synonymSet] of Object.entries(expanded)) {
+        result[word] = Array.from(synonymSet);
+    }
+    return result;
+}
+
+/**
  * Creates and returns a MeiliSearch client instance.
  */
 export function getClient(options: Pick<MeilisearchRuntimeOptions, 'host' | 'apiKey'>): MeiliSearch {
@@ -115,7 +147,8 @@ export async function configureIndex(
 
     if (options?.synonyms && Object.keys(options.synonyms).length > 0) {
         Logger.verbose(`Setting synonyms on "${indexUid}"...`, loggerCtx);
-        const synonymTask = await index.updateSynonyms(options.synonyms);
+        const bidirectionalSynonyms = expandSynonymsBidirectional(options.synonyms);
+        const synonymTask = await index.updateSynonyms(bidirectionalSynonyms);
         await client.tasks.waitForTask(synonymTask.taskUid);
     }
 
