@@ -2,7 +2,12 @@ import { CurrencyCode } from '@vendure/common/lib/generated-types';
 import { ProductVariant, ProductVariantPrice } from '@vendure/core';
 import { describe, expect, it } from 'vitest';
 
-import { hasExplicitVariantPrice, shouldSkipVariantForCurrency } from './variant-price-utils';
+import {
+    hasExplicitVariantPrice,
+    shouldSkipVariantForCurrency,
+    snapshotProductPriceAggregates,
+    snapshotVariantPrice,
+} from './variant-price-utils';
 
 function variant(prices: Array<Partial<ProductVariantPrice>>, listPrice = 0): ProductVariant {
     return {
@@ -70,6 +75,72 @@ describe('variant-price-utils', () => {
         it('does not skip when both a matching price row and a non-zero listPrice are present', () => {
             const v = variant([{ channelId: 2, currencyCode: CurrencyCode.EUR }], 1500);
             expect(shouldSkipVariantForCurrency(v, 2, CurrencyCode.EUR)).toBe(false);
+        });
+    });
+
+    describe('snapshotVariantPrice()', () => {
+        it('captures the variant price fields by value', () => {
+            const v = {
+                price: 1500,
+                priceWithTax: 1800,
+                currencyCode: CurrencyCode.EUR,
+            } as unknown as ProductVariant;
+            const snap = snapshotVariantPrice(v);
+            expect(snap).toEqual({
+                price: 1500,
+                priceWithTax: 1800,
+                currencyCode: CurrencyCode.EUR,
+            });
+        });
+
+        it('is decoupled from later mutations of the source variant', () => {
+            const v = {
+                price: 1500,
+                priceWithTax: 1800,
+                currencyCode: CurrencyCode.EUR,
+            } as unknown as ProductVariant;
+            const snap = snapshotVariantPrice(v);
+            // Simulate a subsequent applyChannelPriceAndTax overwriting the same
+            // variant instance for the next currency iteration.
+            v.price = 9999;
+            v.priceWithTax = 9999;
+            v.currencyCode = CurrencyCode.GBP;
+            expect(snap).toEqual({
+                price: 1500,
+                priceWithTax: 1800,
+                currencyCode: CurrencyCode.EUR,
+            });
+        });
+    });
+
+    describe('snapshotProductPriceAggregates()', () => {
+        it('captures per-variant price + priceWithTax arrays', () => {
+            const variants = [
+                { price: 100, priceWithTax: 120 },
+                { price: 200, priceWithTax: 240 },
+                { price: 300, priceWithTax: 360 },
+            ] as unknown as ProductVariant[];
+            const snap = snapshotProductPriceAggregates(variants);
+            expect(snap.prices).toEqual([100, 200, 300]);
+            expect(snap.pricesWithTax).toEqual([120, 240, 360]);
+        });
+
+        it('is decoupled from later mutations of the source variants', () => {
+            const variants = [
+                { price: 100, priceWithTax: 120 },
+                { price: 200, priceWithTax: 240 },
+            ] as unknown as ProductVariant[];
+            const snap = snapshotProductPriceAggregates(variants);
+            // Simulate the next currency iteration overwriting the same instances.
+            variants[0].price = 999;
+            variants[1].priceWithTax = 999;
+            expect(snap.prices).toEqual([100, 200]);
+            expect(snap.pricesWithTax).toEqual([120, 240]);
+        });
+
+        it('returns empty arrays when no variants are passed', () => {
+            const snap = snapshotProductPriceAggregates([]);
+            expect(snap).toEqual({ prices: [], pricesWithTax: [] });
         });
     });
 });
