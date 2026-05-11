@@ -59,6 +59,7 @@ import {
     removeProductFromChannelDocument,
     removeProductVariantFromChannelDocument,
     updateAssetDocument,
+    updateChannelDocument,
     updateCollectionDocument,
     updateProductDocument,
     updateProductVariantsDocument,
@@ -1455,6 +1456,128 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
                 // entirely rather than indexing a `price: 0` placeholder.
                 const hits = result.search.items.filter(item => item.productId === TEST_PRODUCT_ID);
                 expect(hits).toEqual([]);
+            });
+
+            afterAll(() => {
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            });
+        });
+
+        describe('deletion is currency-set agnostic', () => {
+            // Regression coverage for the delete_by_query refactor: when a channel's
+            // `availableCurrencyCodes` shrinks BETWEEN indexing and deletion, the old
+            // per-channel/per-currency bulk-delete loop would only target the channel's
+            // *current* currency set and leave orphaned docs for the removed currencies.
+            // The delete_by_query implementation must remove every (variant) doc in the
+            // channel regardless of when its currencyCode was added or removed.
+            const SHRINKING_CHANNEL_TOKEN = 'shrinking-currency-set-channel-token';
+            const TEST_PRODUCT_ID = 'T_7'; // Instant Camera — untouched by earlier tests
+            let shrinkingChannel: ChannelFragment;
+            const inspectionIndex = `${INDEX_PREFIX}variants`;
+
+            // Vendure's TestingEntityIdStrategy encodes ids as "T_<n>" over GraphQL but
+            // stores the bare numeric value on entities — ES therefore keyword-indexes
+            // the unprefixed form. Strip the prefix before composing the term filter so
+            // the inspection query lines up with the indexed `channelId` / `productId`.
+            const decodeId = (encoded: string) => encoded.replace(/^T_/, '');
+
+            async function countVariantDocsInChannel(channelId: string, productId: string) {
+                const inspectionAdapter = buildAdapterForBackend()();
+                try {
+                    const { body } = await inspectionAdapter.search({
+                        index: inspectionIndex,
+                        body: {
+                            size: 0,
+                            track_total_hits: true,
+                            query: {
+                                bool: {
+                                    filter: [
+                                        { term: { channelId: decodeId(channelId) } },
+                                        { term: { productId: decodeId(productId) } },
+                                    ],
+                                },
+                            },
+                        },
+                    });
+                    const total = body.hits.total;
+                    return typeof total === 'number' ? total : total.value;
+                } finally {
+                    await inspectionAdapter.close();
+                }
+            }
+
+            beforeAll(async () => {
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                const { createChannel } = await adminClient.query(createChannelDocument, {
+                    input: {
+                        code: 'shrinking-currency-set-channel',
+                        token: SHRINKING_CHANNEL_TOKEN,
+                        defaultLanguageCode: LanguageCode.en,
+                        currencyCode: CurrencyCode.GBP,
+                        availableCurrencyCodes: [CurrencyCode.GBP, CurrencyCode.EUR],
+                        pricesIncludeTax: true,
+                        defaultTaxZoneId: 'T_2',
+                        defaultShippingZoneId: 'T_1',
+                    },
+                });
+                shrinkingChannel = createChannel as ChannelFragment;
+
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                await adminClient.query(assignProductToChannelDocument, {
+                    input: { channelId: shrinkingChannel.id, productIds: [TEST_PRODUCT_ID] },
+                });
+                await awaitRunningJobs(adminClient);
+
+                const { product } = await adminClient.query(getProductWithVariantsDocument, {
+                    id: TEST_PRODUCT_ID,
+                });
+
+                // Add EUR prices so that real EUR docs exist alongside the GBP docs.
+                adminClient.setChannelToken(SHRINKING_CHANNEL_TOKEN);
+                await adminClient.query(updateProductVariantsDocument, {
+                    input: product!.variants.map((v, idx) => ({
+                        id: v.id,
+                        prices: [{ currencyCode: CurrencyCode.EUR, price: 2000 + idx }],
+                    })),
+                });
+
+                await adminClient.query(reindexDocument);
+                await awaitRunningJobs(adminClient);
+            });
+
+            it('indexes docs for the variants prior to deletion', async () => {
+                // Sanity check the test scaffolding: both currencies should produce docs.
+                const docCount = await countVariantDocsInChannel(
+                    shrinkingChannel.id,
+                    TEST_PRODUCT_ID,
+                );
+                expect(docCount).toBeGreaterThan(0);
+            });
+
+            it('removes every doc when deleting the product after the channel currency set has shrunk', async () => {
+                // Shrink the channel: drop EUR from availableCurrencyCodes BEFORE deleting
+                // the product. Under the old per-currency loop, EUR docs would be missed
+                // because the loop only iterates the channel's *current* currencies.
+                adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+                await adminClient.query(updateChannelDocument, {
+                    input: {
+                        id: shrinkingChannel.id,
+                        availableCurrencyCodes: [CurrencyCode.GBP],
+                    },
+                });
+                await awaitRunningJobs(adminClient);
+
+                // Delete the product from the shrunken channel.
+                adminClient.setChannelToken(SHRINKING_CHANNEL_TOKEN);
+                await adminClient.query(deleteProductDocument, { id: TEST_PRODUCT_ID });
+                await awaitRunningJobs(adminClient);
+
+                const docCount = await countVariantDocsInChannel(
+                    shrinkingChannel.id,
+                    TEST_PRODUCT_ID,
+                );
+                expect(docCount).toBe(0);
             });
 
             afterAll(() => {

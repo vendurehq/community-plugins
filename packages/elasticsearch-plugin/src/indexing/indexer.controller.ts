@@ -742,15 +742,8 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         const product = await this.connection
             .getRepository(ctx, Product)
             .createQueryBuilder('product')
-            .select([
-                'product.id',
-                'productVariant.id',
-                'productTranslations.languageCode',
-                'productVariantTranslations.languageCode',
-            ])
-            .leftJoin('product.translations', 'productTranslations')
+            .select(['product.id', 'productVariant.id'])
             .leftJoin('product.variants', 'productVariant')
-            .leftJoin('productVariant.translations', 'productVariantTranslations')
             .leftJoin('product.channels', 'channel')
             .where('product.id = :productId', { productId })
             .andWhere('channel.id = :channelId', { channelId: ctx.channelId })
@@ -759,51 +752,19 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         if (!product) return;
 
         Logger.debug(`Deleting 1 Product (id: ${productId})`, loggerCtx);
-        let operations: BulkVariantOperation[] = [];
-        const languageVariants: LanguageCode[] = [];
-        languageVariants.push(...product.translations.map(t => t.languageCode));
-        for (const variant of product.variants)
-            languageVariants.push(...variant.translations.map(t => t.languageCode));
 
-        const uniqueLanguageVariants = unique(languageVariants);
-
+        // Synthetic-product docs (created via createSyntheticProductIndexItem for
+        // products with no variants) are stored with `productVariantId: 0` and the
+        // owning `productId`. A single delete_by_query per channel removes every
+        // synthetic doc — across all currencies and languages — without enumerating
+        // the channel's *current* availableCurrencyCodes. That matters because the
+        // channel's currency set may have shrunk since indexing, which would
+        // otherwise leave orphaned docs for the dropped currencies.
         for (const channel of channels) {
-            const currencyCodes = this.getChannelIndexCurrencies(channel);
-            for (const currencyCode of currencyCodes) {
-                for (const languageCode of uniqueLanguageVariants) {
-                    operations.push({
-                        index: VARIANT_INDEX_NAME,
-                        operation: {
-                            delete: {
-                                _id: this.getId(-product.id, channel.id, languageCode, currencyCode),
-                            },
-                        },
-                    });
-                    if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                        await this.executeBulkOperationsByChunks(
-                            this.options.reindexBulkOperationSizeLimit,
-                            operations,
-                            index,
-                        );
-                        operations = [];
-                    }
-                }
-            }
+            await this.deleteSyntheticDocsForProductInChannel(channel.id, product.id, index);
         }
-        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-        await this.executeBulkOperationsByChunks(
-            this.options.reindexBulkOperationSizeLimit,
-            operations,
-            index,
-        );
 
-        await this.deleteVariantsInternalOperations(
-            product.variants,
-            channels,
-            uniqueLanguageVariants,
-            index,
-        );
+        await this.deleteVariantsInternalOperations(product.variants, channels, index);
 
         return;
     }
@@ -811,44 +772,95 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
     private async deleteVariantsInternalOperations(
         variants: ProductVariant[],
         channels: Channel[],
-        languageVariants: LanguageCode[],
         index = VARIANT_INDEX_NAME,
     ): Promise<void> {
+        if (!variants.length) return;
         Logger.debug(`Deleting ${variants.length} ProductVariants`, loggerCtx);
-        let operations: BulkVariantOperation[] = [];
-        for (const variant of variants) {
-            for (const channel of channels) {
-                const currencyCodes = this.getChannelIndexCurrencies(channel);
-                for (const currencyCode of currencyCodes) {
-                    for (const languageCode of languageVariants) {
-                        operations.push({
-                            index: VARIANT_INDEX_NAME,
-                            operation: {
-                                delete: {
-                                    _id: this.getId(variant.id, channel.id, languageCode, currencyCode),
-                                },
-                            },
-                        });
-                        if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                            // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                            await this.executeBulkOperationsByChunks(
-                                this.options.reindexBulkOperationSizeLimit,
-                                operations,
-                                index,
-                            );
-                            operations = [];
-                        }
-                    }
-                }
+        // Because we can have a huge amount of variants for 1 product, we chunk
+        // the variant id list to keep each delete_by_query body bounded — the
+        // chunk size mirrors the same threshold used for indexing bulk ops.
+        const chunkSize = this.options.reindexBulkOperationSizeLimit;
+        const variantIds = variants.map(v => v.id);
+        for (const channel of channels) {
+            for (let i = 0; i < variantIds.length; i += chunkSize) {
+                const chunk = variantIds.slice(i, i + chunkSize);
+                await this.deleteVariantDocsInChannel(channel.id, chunk, index);
             }
         }
-        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-        await this.executeBulkOperationsByChunks(
-            this.options.reindexBulkOperationSizeLimit,
-            operations,
-            index,
-        );
         return;
+    }
+
+    /**
+     * Removes every (currency × language) doc keyed under the given variants in
+     * the supplied channel via a single `delete_by_query`. Replaces the previous
+     * per-channel/per-currency/per-language bulk-delete fan-out, which would miss
+     * docs whose currency had since been removed from the channel's
+     * `availableCurrencyCodes`.
+     */
+    private async deleteVariantDocsInChannel(
+        channelId: ID,
+        variantIds: ID[],
+        index: string,
+    ): Promise<void> {
+        if (!variantIds.length) return;
+        const fullIndexName = this.options.indexPrefix + index;
+        try {
+            await this.adapter.deleteByQuery({
+                index: fullIndexName,
+                refresh: true,
+                body: {
+                    query: {
+                        bool: {
+                            filter: [
+                                { term: { channelId } },
+                                { terms: { productVariantId: variantIds } },
+                            ],
+                        },
+                    },
+                },
+            });
+        } catch (e: any) {
+            Logger.error(
+                `Error deleting variants [${variantIds.join(', ')}] from channel ${channelId} on index ${fullIndexName}: ${JSON.stringify(e?.body?.error ?? e)}`,
+                loggerCtx,
+            );
+        }
+    }
+
+    /**
+     * Removes the synthetic doc(s) for a product in a channel — the docs created
+     * for products with no variants (see `createSyntheticProductIndexItem`). They
+     * are identifiable by `productVariantId: 0` alongside the owning `productId`.
+     */
+    private async deleteSyntheticDocsForProductInChannel(
+        channelId: ID,
+        productId: ID,
+        index: string,
+    ): Promise<void> {
+        const fullIndexName = this.options.indexPrefix + index;
+        try {
+            await this.adapter.deleteByQuery({
+                index: fullIndexName,
+                refresh: true,
+                body: {
+                    query: {
+                        bool: {
+                            filter: [
+                                { term: { channelId } },
+                                { term: { productId } },
+                                // Synthetic items are the only docs with productVariantId: 0.
+                                { term: { productVariantId: 0 } },
+                            ],
+                        },
+                    },
+                },
+            });
+        } catch (e: any) {
+            Logger.error(
+                `Error deleting synthetic docs for product ${productId} from channel ${channelId} on index ${fullIndexName}: ${JSON.stringify(e?.body?.error ?? e)}`,
+                loggerCtx,
+            );
+        }
     }
 
     private async getProductIdsByVariantIds(variantIds: ID[]): Promise<ID[]> {
