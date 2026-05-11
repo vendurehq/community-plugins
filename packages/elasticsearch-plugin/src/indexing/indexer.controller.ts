@@ -560,43 +560,87 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
         const uniqueLanguageVariants = unique(languageVariants);
         const originalChannel = ctx.channel;
-        for (const channel of product.channels) {
-            ctx.setChannel(channel);
-            const variantsInChannel = updatedProductVariants.filter(v =>
-                v.channels.map(c => c.id).includes(ctx.channelId),
-            );
+        // The same `ctx` instance is reused across products in `updateProductsOperations`,
+        // so any exception inside the per-channel/per-currency loop must NOT leak a
+        // stale `mutatedCurrencyCode` or `channel` onto the shared context. `finally`
+        // guarantees the resets run even on the throwing path.
+        try {
+            for (const channel of product.channels) {
+                ctx.setChannel(channel);
+                const variantsInChannel = updatedProductVariants.filter(v =>
+                    v.channels.map(c => c.id).includes(ctx.channelId),
+                );
 
-            const currencyCodes = this.getChannelIndexCurrencies(channel);
+                const currencyCodes = this.getChannelIndexCurrencies(channel);
 
-            for (const currencyCode of currencyCodes) {
-                ctx.setCurrencyCode(currencyCode);
+                for (const currencyCode of currencyCodes) {
+                    ctx.setCurrencyCode(currencyCode);
 
-                for (const variant of variantsInChannel)
-                    await this.productPriceApplicator.applyChannelPriceAndTax(variant, ctx);
+                    for (const variant of variantsInChannel)
+                        await this.productPriceApplicator.applyChannelPriceAndTax(variant, ctx);
 
-                for (const languageCode of uniqueLanguageVariants) {
-                    if (variantsInChannel.length) {
-                        for (const variant of variantsInChannel) {
-                            // Skip variants with no explicit ProductVariantPrice in the
-                            // current (channel, currency) pair: without this guard,
-                            // applyChannelPriceAndTax falls back to a zero `listPrice` and we
-                            // would index a phantom `price: 0` document that pollutes
-                            // `sort: { price: ASC }` and surfaces unpriced variants in
-                            // currency-filtered searches.
-                            if (shouldSkipVariantForCurrency(variant, ctx.channelId, currencyCode)) {
-                                Logger.debug(
-                                    `Skipping variant ${variant.id} for ${currencyCode}: no ProductVariantPrice in this channel`,
-                                    loggerCtx,
+                    for (const languageCode of uniqueLanguageVariants) {
+                        if (variantsInChannel.length) {
+                            for (const variant of variantsInChannel) {
+                                // Skip variants with no explicit ProductVariantPrice in the
+                                // current (channel, currency) pair: without this guard,
+                                // applyChannelPriceAndTax falls back to a zero `listPrice` and we
+                                // would index a phantom `price: 0` document that pollutes
+                                // `sort: { price: ASC }` and surfaces unpriced variants in
+                                // currency-filtered searches.
+                                if (shouldSkipVariantForCurrency(variant, ctx.channelId, currencyCode)) {
+                                    Logger.debug(
+                                        `Skipping variant ${variant.id} for ${currencyCode}: no ProductVariantPrice in this channel`,
+                                        loggerCtx,
+                                    );
+                                    continue;
+                                }
+                                operations.push(
+                                    {
+                                        index: VARIANT_INDEX_NAME,
+                                        operation: {
+                                            update: {
+                                                _id: this.getId(
+                                                    variant.id,
+                                                    ctx.channelId,
+                                                    languageCode,
+                                                    currencyCode,
+                                                ),
+                                            },
+                                        },
+                                    },
+                                    {
+                                        index: VARIANT_INDEX_NAME,
+                                        operation: {
+                                            doc: await this.createVariantIndexItem(
+                                                variant,
+                                                variantsInChannel,
+                                                ctx,
+                                                languageCode,
+                                            ),
+                                            doc_as_upsert: true,
+                                        },
+                                    },
                                 );
-                                continue;
+
+                                if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
+                                    // Because we can have a huge amount of variant for 1 product, we also chunk update operations
+                                    await this.executeBulkOperationsByChunks(
+                                        this.options.reindexBulkOperationSizeLimit,
+                                        operations,
+                                        index,
+                                    );
+                                    operations = [];
+                                }
                             }
+                        } else {
                             operations.push(
                                 {
                                     index: VARIANT_INDEX_NAME,
                                     operation: {
                                         update: {
                                             _id: this.getId(
-                                                variant.id,
+                                                -product.id,
                                                 ctx.channelId,
                                                 languageCode,
                                                 currencyCode,
@@ -607,9 +651,8 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                                 {
                                     index: VARIANT_INDEX_NAME,
                                     operation: {
-                                        doc: await this.createVariantIndexItem(
-                                            variant,
-                                            variantsInChannel,
+                                        doc: await this.createSyntheticProductIndexItem(
+                                            product,
                                             ctx,
                                             languageCode,
                                         ),
@@ -617,59 +660,23 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                                     },
                                 },
                             );
-
-                            if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                                // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                                await this.executeBulkOperationsByChunks(
-                                    this.options.reindexBulkOperationSizeLimit,
-                                    operations,
-                                    index,
-                                );
-                                operations = [];
-                            }
                         }
-                    } else {
-                        operations.push(
-                            {
-                                index: VARIANT_INDEX_NAME,
-                                operation: {
-                                    update: {
-                                        _id: this.getId(
-                                            -product.id,
-                                            ctx.channelId,
-                                            languageCode,
-                                            currencyCode,
-                                        ),
-                                    },
-                                },
-                            },
-                            {
-                                index: VARIANT_INDEX_NAME,
-                                operation: {
-                                    doc: await this.createSyntheticProductIndexItem(
-                                        product,
-                                        ctx,
-                                        languageCode,
-                                    ),
-                                    doc_as_upsert: true,
-                                },
-                            },
-                        );
-                    }
-                    if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                        await this.executeBulkOperationsByChunks(
-                            this.options.reindexBulkOperationSizeLimit,
-                            operations,
-                            index,
-                        );
-                        operations = [];
+                        if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
+                            // Because we can have a huge amount of variant for 1 product, we also chunk update operations
+                            await this.executeBulkOperationsByChunks(
+                                this.options.reindexBulkOperationSizeLimit,
+                                operations,
+                                index,
+                            );
+                            operations = [];
+                        }
                     }
                 }
             }
+        } finally {
             ctx.setCurrencyCode(undefined);
+            ctx.setChannel(originalChannel);
         }
-        ctx.setChannel(originalChannel);
 
         // Because we can have a huge amount of variant for 1 product, we also chunk update operations
         await this.executeBulkOperationsByChunks(
