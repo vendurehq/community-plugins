@@ -1,0 +1,206 @@
+---
+title: "MeilisearchOptions"
+generated: true
+---
+<GenerationInfo sourceFile="packages/meilisearch-plugin/src/options.ts" sourceLine="81" packageName="@vendure-community/meilisearch-plugin" />
+
+Configuration options for the MeilisearchPlugin.
+
+*Example*
+
+```ts
+MeilisearchPlugin.init({
+  host: 'http://localhost:7700',
+  apiKey: 'masterKey',
+  synonyms: {
+    phone: ['mobile', 'smartphone'],
+    laptop: ['notebook'],
+  },
+})
+```
+
+```ts title="Signature"
+interface MeilisearchOptions {
+    host?: string;
+    apiKey?: string;
+    connectionAttempts?: number;
+    connectionAttemptInterval?: number;
+    indexPrefix?: string;
+    reindexProductsChunkSize?: number;
+    reindexBatchSize?: number;
+    searchConfig?: SearchConfig;
+    customProductMappings?: {
+        [fieldName: string]: CustomMapping<
+            [Product, ProductVariant[], LanguageCode, Injector, RequestContext]
+        >;
+    };
+    customProductVariantMappings?: {
+        [fieldName: string]: CustomMapping<[ProductVariant, LanguageCode, Injector, RequestContext]>;
+    };
+    bufferUpdates?: boolean;
+    hydrateProductRelations?: Array<EntityRelationPaths<Product>>;
+    hydrateProductVariantRelations?: Array<EntityRelationPaths<ProductVariant>>;
+    extendSearchInputType?: {
+        [name: string]: PrimitiveTypeVariations<GraphQlPrimitive>;
+    };
+    extendSearchSortType?: string[];
+    synonyms?: Record<string, string[]>;
+    stopWords?: string[];
+    rankingRules?: string[];
+    typoTolerance?: TypoToleranceConfig;
+}
+```
+
+<div className="members-wrapper">
+
+### host
+
+<MemberInfo kind="property" type={`string`} default={`'http://localhost:7700'`}   />
+
+The host URL of the Meilisearch server.
+### apiKey
+
+<MemberInfo kind="property" type={`string`} default={`''`}   />
+
+The API key for the Meilisearch server.
+This is the master key or admin key used for indexing operations.
+### connectionAttempts
+
+<MemberInfo kind="property" type={`number`} default={`10`}   />
+
+Maximum amount of attempts made to connect to the Meilisearch server on startup.
+### connectionAttemptInterval
+
+<MemberInfo kind="property" type={`number`} default={`5000`}   />
+
+Interval in milliseconds between attempts to connect to the Meilisearch server on startup.
+### indexPrefix
+
+<MemberInfo kind="property" type={`string`} default={`'vendure-'`}   />
+
+Prefix for the indices created by the plugin.
+### reindexProductsChunkSize
+
+<MemberInfo kind="property" type={`number`} default={`2500`}   />
+
+Products limit chunk size for each loop iteration when indexing products.
+### reindexBatchSize
+
+<MemberInfo kind="property" type={`number`} default={`1000`}   />
+
+Batch size for document additions during reindexing.
+Meilisearch handles documents in batches for optimal performance.
+### searchConfig
+
+<MemberInfo kind="property" type={`<a href='/reference/elasticsearch-plugin/elasticsearch-options#searchconfig'>SearchConfig</a>`}   />
+
+Configuration of the internal Meilisearch search query.
+### customProductMappings
+
+<MemberInfo kind="property" type={`{         [fieldName: string]: CustomMapping<             [Product, ProductVariant[], LanguageCode, Injector, RequestContext]         >;     }`}   />
+
+Custom product mappings for additional data in the search index.
+### customProductVariantMappings
+
+<MemberInfo kind="property" type={`{         [fieldName: string]: CustomMapping<[ProductVariant, LanguageCode, Injector, RequestContext]>;     }`}   />
+
+Custom product variant mappings for additional data in the search index.
+### bufferUpdates
+
+<MemberInfo kind="property" type={`boolean`} default={`false`}   />
+
+If set to `true`, updates to Products, ProductVariants and Collections will not immediately
+trigger an update to the search index. Instead, all these changes will be buffered and will
+only be run via a call to the `runPendingSearchIndexUpdates` mutation in the Admin API.
+### hydrateProductRelations
+
+<MemberInfo kind="property" type={`Array<EntityRelationPaths<Product>>`} default={`[]`}   />
+
+Additional product relations that will be fetched from DB while reindexing.
+### hydrateProductVariantRelations
+
+<MemberInfo kind="property" type={`Array<EntityRelationPaths<ProductVariant>>`} default={`[]`}   />
+
+Additional variant relations that will be fetched from DB while reindexing.
+### extendSearchInputType
+
+<MemberInfo kind="property" type={`{         [name: string]: PrimitiveTypeVariations<GraphQlPrimitive>;     }`} default={`{}`}   />
+
+Allows the `SearchInput` type to be extended with new input fields.
+### extendSearchSortType
+
+<MemberInfo kind="property" type={`string[]`} default={`[]`}   />
+
+Adds a list of sort parameters.
+### synonyms
+
+<MemberInfo kind="property" type={`Record<string, string[]>`} default={`undefined (no synonyms)`}   />
+
+A map of synonyms. Each key is a word, and its value is an array of
+synonymous words. This allows users to find products regardless of
+which synonym they use.
+
+Synonyms are **automatically expanded bidirectionally** — you only need
+to define one direction (e.g. `laptop: ['notebook']`) and the reverse
+mapping (`notebook: ['laptop']`) is generated automatically.
+
+*Example*
+
+```ts
+synonyms: {
+  phone: ['mobile', 'smartphone', 'cellphone'],
+  laptop: ['notebook', 'portable computer'],
+  tv: ['television', 'monitor', 'screen'],
+}
+```
+### stopWords
+
+<MemberInfo kind="property" type={`string[]`} default={`undefined (no stop words)`}   />
+
+A list of words to ignore during search. Common stop words like
+"the", "a", "is" can be filtered out for cleaner results.
+
+*Example*
+
+```ts
+stopWords: ['the', 'a', 'an', 'is', 'for', 'and', 'of', 'to', 'in']
+```
+### rankingRules
+
+<MemberInfo kind="property" type={`string[]`} default={`undefined (Meilisearch defaults)`}   />
+
+Custom ranking rules for controlling how search results are ordered.
+Meilisearch applies these rules in order using a bucket sort algorithm -
+the first rule has the most impact.
+
+Built-in rules: `'words'`, `'typo'`, `'proximity'`, `'attribute'`, `'sort'`, `'exactness'`
+
+You can also add custom ranking rules using attribute names followed by `:asc` or `:desc`.
+
+*Example*
+
+```ts
+// Prioritize in-stock products, then sort by price
+rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness', 'productInStock:desc']
+```
+### typoTolerance
+
+<MemberInfo kind="property" type={`TypoToleranceConfig`} default={`undefined (Meilisearch defaults: typo tolerance enabled)`}   />
+
+Configuration for typo tolerance. Allows you to control how Meilisearch
+handles misspellings in search queries.
+
+*Example*
+
+```ts
+typoTolerance: {
+  enabled: true,
+  disableOnAttributes: ['sku'],  // SKU must match exactly
+  disableOnWords: ['iPhone'],     // Brand names must be exact
+  minWordSizeForOneTypo: 4,
+  minWordSizeForTwoTypos: 8,
+}
+```
+
+
+</div>

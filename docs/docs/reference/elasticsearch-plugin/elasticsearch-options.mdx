@@ -8,11 +8,9 @@ Configuration options for the [ElasticsearchPlugin](/reference/elasticsearch-plu
 
 ```ts title="Signature"
 interface ElasticsearchOptions {
-    host?: string;
-    port?: number;
+    adapter: () => SearchClientAdapter;
     connectionAttempts?: number;
     connectionAttemptInterval?: number;
-    clientOptions?: ClientOptions;
     indexPrefix?: string;
     indexSettings?: object;
     indexMappingProperties?: {
@@ -41,34 +39,46 @@ interface ElasticsearchOptions {
 
 <div className="members-wrapper">
 
-### host
+### adapter
 
-<MemberInfo kind="property" type={`string`} default={`'http://localhost'`}   />
+<MemberInfo kind="property" type={`() => SearchClientAdapter`}   />
 
-The host of the Elasticsearch server. May also be specified in `clientOptions.node`.
-### port
+Factory that produces a `SearchClientAdapter` on demand.
 
-<MemberInfo kind="property" type={`number`} default={`9200`}   />
+The plugin invokes this factory **once per NestJS provider** that
+needs a search backend — currently the read-side `ElasticsearchService`
+and the write-side `ElasticsearchIndexerController`. Each provider
+therefore owns an independent client / connection pool, so tearing
+one down during `onModuleDestroy` cannot starve in-flight requests
+on the other. A single shared instance would be torn down twice and
+take both providers offline; hence the factory shape.
 
-The port of the Elasticsearch server. May also be specified in `clientOptions.node`.
+The typical call site is a thin arrow wrapping one of the first-party
+factories, e.g.:
+
+*Example*
+
+```ts
+ElasticsearchPlugin.init({
+  adapter: () => createElasticsearchAdapter({ host, port }),
+});
+```
+
+Backend-specific configuration (host, port, auth, AWS SigV4, etc.)
+lives on the inner factory, so swapping backends only touches the
+factory call and none of the shared plugin options below.
 ### connectionAttempts
 
 <MemberInfo kind="property" type={`number`} default={`10`}   />
 
-Maximum amount of attempts made to connect to the ElasticSearch server on startup.
+Maximum amount of attempts made to connect to the search server on
+startup.
 ### connectionAttemptInterval
 
 <MemberInfo kind="property" type={`number`} default={`5000`}   />
 
-Interval in milliseconds between attempts to connect to the ElasticSearch server on startup.
-### clientOptions
-
-<MemberInfo kind="property" type={`ClientOptions`}   />
-
-Options to pass directly to the
-[Elasticsearch Node.js client](https://www.elastic.co/guide/en/elasticsearch/client/javascript-api/current/index.html). For example, to
-set authentication or other more advanced options.
-Note that if the `node` or `nodes` option is specified, it will override the values provided in the `host` and `port` options.
+Interval in milliseconds between attempts to connect to the search
+server on startup.
 ### indexPrefix
 
 <MemberInfo kind="property" type={`string`} default={`'vendure-'`}   />
@@ -361,7 +371,7 @@ extend input SearchResultSortParameter {
 
 
 </div>
-<GenerationInfo sourceFile="packages/elasticsearch-plugin/src/options.ts" sourceLine="397" packageName="@vendure-community/elasticsearch-plugin" />
+<GenerationInfo sourceFile="packages/elasticsearch-plugin/src/options.ts" sourceLine="404" packageName="@vendure-community/elasticsearch-plugin" />
 
 Configuration options for the internal Elasticsearch query which is generated when performing a search.
 
@@ -639,7 +649,7 @@ searchConfig: {
 
 
 </div>
-<GenerationInfo sourceFile="packages/elasticsearch-plugin/src/options.ts" sourceLine="683" packageName="@vendure-community/elasticsearch-plugin" />
+<GenerationInfo sourceFile="packages/elasticsearch-plugin/src/options.ts" sourceLine="690" packageName="@vendure-community/elasticsearch-plugin" />
 
 Configuration for [boosting](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-multi-match-query.html#field-boost)
 the scores of given fields when performing a search against a term.

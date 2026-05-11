@@ -30,7 +30,7 @@ define how the plugin will respond to Vendure events in order to trigger calls t
 Stellate [Purging API](https://stellate.co/docs/graphql-edge-cache/purging-api).
 
 ```ts
-import { StellatePlugin, defaultPurgeRules } from '@vendure/stellate-plugin';
+import { StellatePlugin, defaultPurgeRules } from '@vendure-community/stellate-plugin';
 import { VendureConfig } from '@vendure/core';
 
 export const config: VendureConfig = {
@@ -169,7 +169,7 @@ export default config;
 You can then add a custom `PurgeRule` to the StellatePlugin configuration:
 
 ```ts
-import { StellatePlugin, defaultPurgeRules } from "@vendure/stellate-plugin";
+import { StellatePlugin, defaultPurgeRules } from "@vendure-community/stellate-plugin";
 import { VendureConfig } from "@vendure/core";
 import { ArticleEvent } from "./plugins/cms/events/article-event";
 
@@ -201,7 +201,7 @@ If you want to log the calls that _would_ be made to the Stellate Purge API when
 Note that debugLogging generates a lot of debug-level logging, so it is recommended to only enable this when needed.
 
 ```ts
-import { StellatePlugin, defaultPurgeRules } from '@vendure/stellate-plugin';
+import { StellatePlugin, defaultPurgeRules } from '@vendure-community/stellate-plugin';
 import { VendureConfig } from '@vendure/core';
 
 export const config: VendureConfig = {
