@@ -93,6 +93,7 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
                 ElasticsearchPlugin.init({
                     indexPrefix: INDEX_PREFIX,
                     adapter: buildAdapterForBackend(),
+                    indexCurrencyCode: true,
                     hydrateProductVariantRelations: ['customFields.material', 'stockLevels'],
                     customProductVariantMappings: {
                         inStock: {
