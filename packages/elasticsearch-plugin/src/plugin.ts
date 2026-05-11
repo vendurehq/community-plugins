@@ -3,6 +3,8 @@ import {
     AssetEvent,
     BUFFER_SEARCH_INDEX_UPDATES,
     CollectionModificationEvent,
+    ConfigService,
+    DefaultProductVariantPriceSelectionStrategy,
     EventBus,
     HealthCheckRegistryService,
     ID,
@@ -114,6 +116,7 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
         private elasticsearchIndexService: ElasticsearchIndexService,
         private elasticsearchHealthIndicator: ElasticsearchHealthIndicator,
         private healthCheckRegistryService: HealthCheckRegistryService,
+        private configService: ConfigService,
     ) {}
 
     /**
@@ -135,6 +138,8 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
             return;
         }
         Logger.info(`Successfully connected to search backend (${backendLabel})`, loggerCtx);
+
+        this.warnIfCustomPriceStrategyWithMultiCurrencyIndexing();
 
         await this.elasticsearchService.createIndicesIfNotExists();
         this.eventBus.ofType(ProductEvent).subscribe(event => {
@@ -241,5 +246,29 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
      */
     private backendLabel(): string {
         return this.elasticsearchService.getBackendLabel();
+    }
+
+    /**
+     * Emits a one-off bootstrap warning when `indexCurrencyCode: true` is paired
+     * with a custom `ProductVariantPriceSelectionStrategy`. The multi-currency
+     * indexer relies on the strategy honouring `ctx.currencyCode` so that each
+     * `(channel, currency)` iteration receives the matching price row; a strategy
+     * that ignores the currency would silently produce identical prices across
+     * currencies in the index. This isn't fatal — hence a warning, not a throw —
+     * but it almost always indicates misconfiguration worth surfacing.
+     */
+    private warnIfCustomPriceStrategyWithMultiCurrencyIndexing(): void {
+        if (!ElasticsearchPlugin.options.indexCurrencyCode) {
+            return;
+        }
+        const strategy = this.configService.catalogOptions.productVariantPriceSelectionStrategy;
+        if (strategy instanceof DefaultProductVariantPriceSelectionStrategy) {
+            return;
+        }
+        Logger.warn(
+            'A custom ProductVariantPriceSelectionStrategy is configured together with indexCurrencyCode=true — ' +
+                'verify it honours ctx.currencyCode, otherwise per-currency search documents may all share the same price.',
+            loggerCtx,
+        );
     }
 }
