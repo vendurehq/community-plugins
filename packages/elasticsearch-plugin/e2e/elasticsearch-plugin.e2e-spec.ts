@@ -1458,6 +1458,60 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
                 expect(hits).toEqual([]);
             });
 
+            // Companion coverage for products with NO variants: the indexer emits one
+            // synthetic doc per (channel, language, currency) tuple via
+            // `createSyntheticProductIndexItem`. Those docs are tagged
+            // `enabled: false` / `productEnabled: false`, so they must stay invisible
+            // to the shop API regardless of which currency the client requests — this
+            // pins that contract so the per-currency fan-out cannot quietly start
+            // surfacing zero-priced placeholder products in EUR storefronts.
+            describe('no-variant product (synthetic doc) path', () => {
+                let syntheticProductId: string;
+
+                beforeAll(async () => {
+                    adminClient.setChannelToken(GBP_ONLY_CHANNEL_TOKEN);
+                    const { createProduct } = await adminClient.query(createProductDocument, {
+                        input: {
+                            translations: [
+                                {
+                                    languageCode: LanguageCode.en,
+                                    name: 'Currency-agnostic placeholder product',
+                                    slug: 'currency-agnostic-placeholder-product',
+                                    description: 'no variants attached',
+                                },
+                            ],
+                        },
+                    });
+                    syntheticProductId = createProduct.id;
+                    await adminClient.query(reindexDocument);
+                    await awaitRunningJobs(adminClient);
+                });
+
+                it('does not surface the synthetic product in a shop EUR search', async () => {
+                    shopClient.setChannelToken(GBP_ONLY_CHANNEL_TOKEN);
+                    const result = await shopClient.query(
+                        searchGetPricesDocumentWithID,
+                        { input: { groupByProduct: true, take: 50 } },
+                        { currencyCode: CurrencyCode.EUR },
+                    );
+                    const hit = result.search.items.find(
+                        item => item.productId === syntheticProductId,
+                    );
+                    expect(hit).toBeUndefined();
+                });
+
+                it('does not surface the synthetic product in a shop GBP search either', async () => {
+                    shopClient.setChannelToken(GBP_ONLY_CHANNEL_TOKEN);
+                    const result = await shopClient.query(searchGetPricesDocumentWithID, {
+                        input: { groupByProduct: true, take: 50 },
+                    });
+                    const hit = result.search.items.find(
+                        item => item.productId === syntheticProductId,
+                    );
+                    expect(hit).toBeUndefined();
+                });
+            });
+
             afterAll(() => {
                 adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
                 shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
