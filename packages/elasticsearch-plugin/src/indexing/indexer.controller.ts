@@ -49,6 +49,7 @@ import {
 import { CurrencyAwareMutableRequestContext } from './currency-aware-request-context';
 import { buildVariantDocId, resolveChannelIndexCurrencies } from './indexing-id-helpers';
 import { createIndices, getIndexNameByAlias } from './indexing-utils';
+import { shouldSkipVariantForCurrency } from './variant-price-utils';
 
 export const defaultProductRelations: Array<EntityRelationPaths<Product>> = [
     'featuredAsset',
@@ -66,6 +67,7 @@ export const defaultVariantRelations: Array<EntityRelationPaths<ProductVariant>>
     'taxCategory',
     'channels',
     'channels.defaultTaxZone',
+    'productVariantPrices',
 ];
 
 export interface ReindexMessageResponse {
@@ -571,6 +573,19 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 for (const languageCode of uniqueLanguageVariants) {
                     if (variantsInChannel.length) {
                         for (const variant of variantsInChannel) {
+                            // Skip variants with no explicit ProductVariantPrice in the
+                            // current (channel, currency) pair: without this guard,
+                            // applyChannelPriceAndTax falls back to a zero `listPrice` and we
+                            // would index a phantom `price: 0` document that pollutes
+                            // `sort: { price: ASC }` and surfaces unpriced variants in
+                            // currency-filtered searches.
+                            if (shouldSkipVariantForCurrency(variant, ctx.channelId, currencyCode)) {
+                                Logger.debug(
+                                    `Skipping variant ${variant.id} for ${currencyCode}: no ProductVariantPrice in this channel`,
+                                    loggerCtx,
+                                );
+                                continue;
+                            }
                             operations.push(
                                 {
                                     index: VARIANT_INDEX_NAME,
