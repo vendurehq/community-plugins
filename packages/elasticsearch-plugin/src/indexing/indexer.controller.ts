@@ -47,6 +47,7 @@ import {
 } from '../types';
 
 import { CurrencyAwareMutableRequestContext } from './currency-aware-request-context';
+import { buildVariantDocId, resolveChannelIndexCurrencies } from './indexing-id-helpers';
 import { createIndices, getIndexNameByAlias } from './indexing-utils';
 
 export const defaultProductRelations: Array<EntityRelationPaths<Product>> = [
@@ -559,9 +560,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 v.channels.map(c => c.id).includes(ctx.channelId),
             );
 
-            const currencyCodes = channel.availableCurrencyCodes?.length
-                ? channel.availableCurrencyCodes
-                : [channel.defaultCurrencyCode];
+            const currencyCodes = this.getChannelIndexCurrencies(channel);
 
             for (const currencyCode of currencyCodes) {
                 ctx.setCurrencyCode(currencyCode);
@@ -577,7 +576,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                                     index: VARIANT_INDEX_NAME,
                                     operation: {
                                         update: {
-                                            _id: ElasticsearchIndexerController.getId(
+                                            _id: this.getId(
                                                 variant.id,
                                                 ctx.channelId,
                                                 languageCode,
@@ -616,7 +615,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                                 index: VARIANT_INDEX_NAME,
                                 operation: {
                                     update: {
-                                        _id: ElasticsearchIndexerController.getId(
+                                        _id: this.getId(
                                             -product.id,
                                             ctx.channelId,
                                             languageCode,
@@ -754,21 +753,14 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         const uniqueLanguageVariants = unique(languageVariants);
 
         for (const channel of channels) {
-            const currencyCodes = channel.availableCurrencyCodes?.length
-                ? channel.availableCurrencyCodes
-                : [channel.defaultCurrencyCode];
+            const currencyCodes = this.getChannelIndexCurrencies(channel);
             for (const currencyCode of currencyCodes) {
                 for (const languageCode of uniqueLanguageVariants) {
                     operations.push({
                         index: VARIANT_INDEX_NAME,
                         operation: {
                             delete: {
-                                _id: ElasticsearchIndexerController.getId(
-                                    -product.id,
-                                    channel.id,
-                                    languageCode,
-                                    currencyCode,
-                                ),
+                                _id: this.getId(-product.id, channel.id, languageCode, currencyCode),
                             },
                         },
                     });
@@ -811,21 +803,14 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         let operations: BulkVariantOperation[] = [];
         for (const variant of variants) {
             for (const channel of channels) {
-                const currencyCodes = channel.availableCurrencyCodes?.length
-                    ? channel.availableCurrencyCodes
-                    : [channel.defaultCurrencyCode];
+                const currencyCodes = this.getChannelIndexCurrencies(channel);
                 for (const currencyCode of currencyCodes) {
                     for (const languageCode of languageVariants) {
                         operations.push({
                             index: VARIANT_INDEX_NAME,
                             operation: {
                                 delete: {
-                                    _id: ElasticsearchIndexerController.getId(
-                                        variant.id,
-                                        channel.id,
-                                        languageCode,
-                                        currencyCode,
-                                    ),
+                                    _id: this.getId(variant.id, channel.id, languageCode, currencyCode),
                                 },
                             },
                         });
@@ -1103,12 +1088,22 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         return unique([...variantFacetValueIds, ...productFacetValueIds]);
     }
 
-    private static getId(
+    private getId(
         entityId: ID,
         channelId: ID,
         languageCode: LanguageCode,
         currencyCode: CurrencyCode,
     ): string {
-        return `${channelId.toString()}_${entityId.toString()}_${languageCode}_${currencyCode}`;
+        return buildVariantDocId(
+            this.options.indexCurrencyCode,
+            entityId,
+            channelId,
+            languageCode,
+            currencyCode,
+        );
+    }
+
+    private getChannelIndexCurrencies(channel: Channel): CurrencyCode[] {
+        return resolveChannelIndexCurrencies(this.options.indexCurrencyCode, channel);
     }
 }
