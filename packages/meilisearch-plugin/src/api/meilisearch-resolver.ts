@@ -17,7 +17,7 @@ import {
 } from '@vendure/core';
 
 import { MeilisearchService } from '../meilisearch.service';
-import { MeilisearchSearchInput, SearchPriceData, SimilarDocumentsInput } from '../types';
+import { MeilisearchSearchInput, SearchPriceData } from '../types';
 
 @Resolver('SearchResponse')
 export class ShopMeilisearchResolver implements Pick<SearchResolver, 'search'> {
@@ -104,22 +104,5 @@ export class EntityMeilisearchResolver implements Pick<SearchResolver, 'facetVal
     ): Promise<Array<{ collection: Collection; count: number }>> {
         const collections = await this.meilisearchService.collections(ctx, (parent as any).input, true);
         return collections.filter((i: { collection: Collection; count: number }) => !i.collection.isPrivate);
-    }
-}
-
-/**
- * Resolver for the `similarDocuments` query. Only registered when AI search is enabled.
- */
-@Resolver()
-export class SimilarDocumentsResolver {
-    constructor(private meilisearchService: MeilisearchService) {}
-
-    @Query()
-    @Allow(Permission.Public)
-    async similarDocuments(
-        @Ctx() ctx: RequestContext,
-        @Args() args: { input: SimilarDocumentsInput },
-    ): Promise<{ items: any[]; totalItems: number }> {
-        return this.meilisearchService.similarDocuments(ctx, args.input);
     }
 }

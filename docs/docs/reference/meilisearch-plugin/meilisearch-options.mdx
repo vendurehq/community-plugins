@@ -9,26 +9,9 @@ Configuration options for the MeilisearchPlugin.
 *Example*
 
 ```ts
-// Basic setup (full-text search only)
 MeilisearchPlugin.init({
   host: 'http://localhost:7700',
   apiKey: 'masterKey',
-})
-
-// With AI-powered hybrid search
-MeilisearchPlugin.init({
-  host: 'http://localhost:7700',
-  apiKey: 'masterKey',
-  ai: {
-    embedders: {
-      'product-search': {
-        source: 'openAi',
-        model: 'text-embedding-3-small',
-        apiKey: process.env.OPENAI_API_KEY,
-        documentTemplate: "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
-      },
-    },
-  },
   synonyms: {
     phone: ['mobile', 'smartphone'],
     laptop: ['notebook'],
@@ -61,7 +44,6 @@ interface MeilisearchOptions {
         [name: string]: PrimitiveTypeVariations<GraphQlPrimitive>;
     };
     extendSearchSortType?: string[];
-    ai?: AiSearchConfig;
     synonyms?: Record<string, string[]>;
     stopWords?: string[];
     rankingRules?: string[];
@@ -150,33 +132,6 @@ Allows the `SearchInput` type to be extended with new input fields.
 <MemberInfo kind="property" type={`string[]`} default={`[]`}   />
 
 Adds a list of sort parameters.
-### ai
-
-<MemberInfo kind="property" type={`AiSearchConfig`} default={`undefined (AI search disabled)`}   />
-
-AI-powered search configuration. When set, enables hybrid search
-that combines full-text keyword matching with semantic vector search.
-
-Requires an embedding provider (OpenAI, HuggingFace, Ollama, etc.).
-This is entirely **opt-in** - if not configured, the plugin operates
-in full-text search mode only.
-
-*Example*
-
-```ts
-ai: {
-  embedders: {
-    'default': {
-      source: 'openAi',
-      model: 'text-embedding-3-small',
-      apiKey: process.env.OPENAI_API_KEY,
-      documentTemplate: "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
-    },
-  },
-  defaultEmbedder: 'default',
-  semanticRatio: 0.5,
-}
-```
 ### synonyms
 
 <MemberInfo kind="property" type={`Record<string, string[]>`} default={`undefined (no synonyms)`}   />

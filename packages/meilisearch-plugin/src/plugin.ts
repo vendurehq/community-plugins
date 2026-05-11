@@ -27,7 +27,6 @@ import {
     AdminMeilisearchResolver,
     EntityMeilisearchResolver,
     ShopMeilisearchResolver,
-    SimilarDocumentsResolver,
 } from './api/meilisearch-resolver';
 import { MEILISEARCH_OPTIONS, loggerCtx } from './constants';
 import { MeilisearchIndexerController } from './indexing/indexer.controller';
@@ -40,10 +39,8 @@ function getCustomResolvers(options: MeilisearchRuntimeOptions) {
     const requiresUnionResolver =
         0 < Object.keys(options.customProductMappings || {}).length &&
         0 < Object.keys(options.customProductVariantMappings || {}).length;
-    const aiEnabled = !!(options.ai?.embedders && Object.keys(options.ai.embedders).length > 0);
     return [
         ...(requiresUnionResolver ? [CustomMappingsResolver] : []),
-        ...(aiEnabled ? [SimilarDocumentsResolver] : []),
     ];
 }
 
@@ -71,33 +68,11 @@ function getCustomResolvers(options: MeilisearchRuntimeOptions) {
  * ```ts
  * import { MeilisearchPlugin } from './plugins/meilisearch/src/plugin';
  *
- * // Basic full-text search (no AI)
  * const config: VendureConfig = {
  *   plugins: [
  *     MeilisearchPlugin.init({
  *       host: 'http://localhost:7700',
  *       apiKey: 'your-master-key',
- *     }),
- *   ],
- * };
- *
- * // With AI-powered hybrid search + synonyms
- * const configWithAi: VendureConfig = {
- *   plugins: [
- *     MeilisearchPlugin.init({
- *       host: 'http://localhost:7700',
- *       apiKey: 'your-master-key',
- *       ai: {
- *         embedders: {
- *           'default': {
- *             source: 'openAi',
- *             model: 'text-embedding-3-small',
- *             apiKey: process.env.OPENAI_API_KEY,
- *             documentTemplate: "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
- *           },
- *         },
- *         semanticRatio: 0.5,
- *       },
  *       synonyms: {
  *         phone: ['mobile', 'smartphone'],
  *         laptop: ['notebook'],

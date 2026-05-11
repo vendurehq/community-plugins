@@ -31,7 +31,6 @@ import {
     MeilisearchSearchResult,
     ProductIndexItem,
     SearchPriceData,
-    SimilarDocumentsInput,
     VariantIndexItem,
 } from './types';
 
@@ -95,23 +94,6 @@ export class MeilisearchService implements OnModuleInit {
     }
 
     /**
-     * @description
-     * Returns `true` if AI-powered hybrid search is configured and available.
-     */
-    get isAiSearchEnabled(): boolean {
-        return !!(this.options.ai?.embedders && Object.keys(this.options.ai.embedders).length > 0);
-    }
-
-    /**
-     * @description
-     * Returns the default embedder name from the AI config.
-     */
-    get defaultEmbedderName(): string | undefined {
-        if (!this.options.ai) return undefined;
-        return this.options.ai.defaultEmbedder || Object.keys(this.options.ai.embedders)[0];
-    }
-
-    /**
      * Perform a fulltext search according to the provided input arguments.
      */
     async search(
@@ -145,14 +127,6 @@ export class MeilisearchService implements OnModuleInit {
             searchParams.distinct = 'productId';
         } else if (groupBySKU) {
             searchParams.distinct = 'sku';
-        }
-
-        // If AI search is enabled, automatically add hybrid search params
-        if (this.isAiSearchEnabled && this.defaultEmbedderName) {
-            searchParams.hybrid = {
-                embedder: this.defaultEmbedderName,
-                semanticRatio: this.options.ai?.semanticRatio ?? 0.5,
-            };
         }
 
         // Apply query-time search config options from plugin configuration
@@ -210,27 +184,7 @@ export class MeilisearchService implements OnModuleInit {
             : searchParams;
 
         try {
-            let result;
-            try {
-                result = await index.search(input.term || '', finalParams);
-            } catch (searchError: any) {
-                // During a reindex, the swap temporarily leaves the primary index without
-                // embedder settings. If a search arrives in that brief window with hybrid
-                // params, Meilisearch will reject it. We gracefully fall back to a standard
-                // keyword search so the user still gets results instead of an error.
-                // The embedder settings are restored once the reindex swap fully completes
-                // and subsequent searches will use AI/hybrid search again automatically.
-                // its a strange behaviour i am facing for this (in rare cases) -> tried with rename: true in indexer.controller.ts but it didn't work.
-                // so that whole settings and documents are updated . no luck
-                // Will try to fix this in later pr
-                if (searchError.message?.includes('Cannot find embedder') && finalParams.hybrid) {
-                    Logger.verbose('Embedder not available, falling back to keyword search', loggerCtx);
-                    const { hybrid, ...paramsWithoutHybrid } = finalParams;
-                    result = await index.search(input.term || '', paramsWithoutHybrid);
-                } else {
-                    throw searchError;
-                }
-            }
+            const result = await index.search(input.term || '', finalParams);
             await this.eventBus.publish(new SearchEvent(ctx, input));
 
             if (groupByProduct || groupBySKU) {
@@ -454,48 +408,6 @@ export class MeilisearchService implements OnModuleInit {
     }
 
     /**
-     * @description
-     * Retrieves documents similar to the given document ID using AI embeddings.
-     * Requires AI search to be configured. Returns an empty array if AI is not enabled.
-     *
-     * Useful for "More like this", "Customers also viewed", or product recommendations.
-     */
-    async similarDocuments(
-        ctx: RequestContext,
-        input: SimilarDocumentsInput,
-    ): Promise<{ items: MeilisearchSearchResult[]; totalItems: number }> {
-        if (!this.isAiSearchEnabled) {
-            Logger.warn(
-                'similarDocuments called but AI search is not configured. Configure `ai.embedders` in plugin options.',
-                loggerCtx,
-            );
-            return { items: [], totalItems: 0 };
-        }
-
-        const indexUid = getIndexUid(this.options.indexPrefix, VARIANT_INDEX_NAME);
-        const index = this.client.index(indexUid);
-        const embedder = input.embedder || this.defaultEmbedderName || '';
-
-        try {
-            const result = await index.searchSimilarDocuments({
-                id: input.id,
-                embedder,
-                limit: input.limit || 10,
-                offset: input.offset || 0,
-                filter: input.filter || undefined,
-            });
-
-            return {
-                items: result.hits.map((hit: any) => this.mapVariantToSearchResult(hit)),
-                totalItems: (result as any).estimatedTotalHits || (result as any).totalHits || result.hits.length,
-            };
-        } catch (e: any) {
-            Logger.error(`Error fetching similar documents: ${e.message}`, loggerCtx, e.stack);
-            return { items: [], totalItems: 0 };
-        }
-    }
-
-    /**
      * Rebuilds the full search index.
      */
     async reindex(ctx: RequestContext): Promise<Job> {
@@ -605,7 +517,7 @@ export class MeilisearchService implements OnModuleInit {
         if (collectionSlug) {
             filterParts.push(`collectionSlugs = "${collectionSlug}"`);
         }
-        const collectionSlugs = input.collectionSlugs as string[] | undefined;
+        const collectionSlugs: string[] | undefined = input.collectionSlugs;
         if (collectionSlugs && collectionSlugs.length) {
             const uniqueSlugs = Array.from(new Set(collectionSlugs));
             const orParts = uniqueSlugs.map(slug => `collectionSlugs = "${slug}"`);

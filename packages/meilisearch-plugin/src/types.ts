@@ -173,29 +173,6 @@ export type UpdateIndexQueueJobData =
     | AssignVariantToChannelJobData
     | RemoveVariantFromChannelJobData;
 
-export interface SimilarDocumentsInput {
-    /**
-     * The document ID to find similar documents for.
-     */
-    id: string;
-    /**
-     * The name of the embedder to use. Must match an embedder configured in the AI options.
-     */
-    embedder?: string;
-    /**
-     * Maximum number of similar documents to return.
-     */
-    limit?: number;
-    /**
-     * Number of documents to skip.
-     */
-    offset?: number;
-    /**
-     * Meilisearch filter string to narrow down results.
-     */
-    filter?: string;
-}
-
 export type GraphQlPrimitive = 'ID' | 'String' | 'Int' | 'Float' | 'Boolean';
 export type PrimitiveTypeVariations<T extends GraphQlPrimitive> = T | `${T}!` | `[${T}!]` | `[${T}!]!`;
 type GraphQlPermittedReturnType = PrimitiveTypeVariations<GraphQlPrimitive>;

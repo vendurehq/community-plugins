@@ -283,7 +283,7 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
                 // Atomically swap the temporary index with the primary index.
                 // The standard swap (without `rename`) exchanges documents, settings,
                 // and task history between the two indexes. This preserves all index
-                // configuration including AI embedder settings.
+                // configuration.
                 try {
                     // Ensure the primary index exists before swapping
                     await createIndex(this.client, primaryIndexUid, 'id');

@@ -5,8 +5,6 @@ export {
     SearchConfig,
     SearchConfigDefaults,
     MatchingStrategy,
-    EmbedderConfig,
-    AiSearchConfig,
     TypoToleranceConfig,
 } from './options';
 export {
@@ -18,7 +16,6 @@ export {
     MeilisearchSortInput,
     VariantIndexItem,
     ProductIndexItem,
-    SimilarDocumentsInput,
     CustomMapping,
     GraphQlPrimitive,
     PrimitiveTypeVariations,

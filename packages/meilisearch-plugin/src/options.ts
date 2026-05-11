@@ -19,101 +19,6 @@ import {
 
 /**
  * @description
- * Configuration for an AI embedder source. Meilisearch supports OpenAI, HuggingFace,
- * Ollama, and generic REST embedders.
- *
- * @example
- * ```ts
- * // OpenAI embedder
- * {
- *   source: 'openAi',
- *   model: 'text-embedding-3-small',
- *   apiKey: process.env.OPENAI_API_KEY,
- *   documentTemplate: "A product called '{{doc.productName}}' described as '{{doc.description}}'",
- * }
- *
- * // Ollama embedder (self-hosted)
- * {
- *   source: 'ollama',
- *   url: 'http://localhost:11434/api/embeddings',
- *   model: 'nomic-embed-text',
- *   documentTemplate: "A product: {{doc.productName}}",
- * }
- * ```
- */
-export interface EmbedderConfig {
-    /**
-     * @description
-     * The embedder source. Supported values:
-     * - `'openAi'` - OpenAI embeddings (recommended for most use cases)
-     * - `'huggingFace'` - HuggingFace models (self-hosted, good for small datasets)
-     * - `'ollama'` - Ollama local models
-     * - `'rest'` - Any REST API embedder
-     * - `'userProvided'` - You generate and provide your own embeddings
-     */
-    source: 'openAi' | 'huggingFace' | 'ollama' | 'rest' | 'userProvided';
-    /**
-     * @description
-     * The model name to use for generating embeddings.
-     *
-     * - For OpenAI: e.g. `'text-embedding-3-small'`, `'text-embedding-3-large'`
-     * - For HuggingFace: e.g. `'BAAI/bge-base-en-v1.5'`
-     * - For Ollama: e.g. `'nomic-embed-text'`
-     */
-    model?: string;
-    /**
-     * @description
-     * API key for the embedder provider (required for OpenAI, optional for others).
-     */
-    apiKey?: string;
-    /**
-     * @description
-     * URL of the embedder API (required for `rest` and `ollama` sources).
-     */
-    url?: string;
-    /**
-     * @description
-     * A Liquid template that renders each document into text for embedding.
-     * Use `{{doc.fieldName}}` to interpolate document fields.
-     *
-     * Keep templates short (15-45 words) and include only the most relevant fields.
-     *
-     * @example
-     * ```
-     * "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}"
-     * ```
-     */
-    documentTemplate?: string;
-    /**
-     * @description
-     * Maximum byte length of the rendered document template. Defaults to 400.
-     */
-    documentTemplateMaxBytes?: number;
-    /**
-     * @description
-     * The dimensions of the embeddings. Required for `userProvided` source.
-     * For other sources, this is usually inferred from the model.
-     */
-    dimensions?: number;
-    /**
-     * @description
-     * Custom request structure for `rest` source embedders.
-     */
-    request?: Record<string, any>;
-    /**
-     * @description
-     * Custom response structure for `rest` source embedders.
-     */
-    response?: Record<string, any>;
-    /**
-     * @description
-     * Additional headers for `rest` source embedders.
-     */
-    headers?: Record<string, string>;
-}
-
-/**
- * @description
  * Configuration for typo tolerance behavior.
  */
 export interface TypoToleranceConfig {
@@ -161,26 +66,9 @@ export interface TypoToleranceConfig {
  *
  * @example
  * ```ts
- * // Basic setup (full-text search only)
  * MeilisearchPlugin.init({
  *   host: 'http://localhost:7700',
  *   apiKey: 'masterKey',
- * })
- *
- * // With AI-powered hybrid search
- * MeilisearchPlugin.init({
- *   host: 'http://localhost:7700',
- *   apiKey: 'masterKey',
- *   ai: {
- *     embedders: {
- *       'product-search': {
- *         source: 'openAi',
- *         model: 'text-embedding-3-small',
- *         apiKey: process.env.OPENAI_API_KEY,
- *         documentTemplate: "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
- *       },
- *     },
- *   },
  *   synonyms: {
  *     phone: ['mobile', 'smartphone'],
  *     laptop: ['notebook'],
@@ -303,37 +191,6 @@ export interface MeilisearchOptions {
      */
     extendSearchSortType?: string[];
 
-    // ───────────────────────────── AI / Hybrid Search ─────────────────────────────
-
-    /**
-     * @description
-     * AI-powered search configuration. When set, enables hybrid search
-     * that combines full-text keyword matching with semantic vector search.
-     *
-     * Requires an embedding provider (OpenAI, HuggingFace, Ollama, etc.).
-     * This is entirely **opt-in** - if not configured, the plugin operates
-     * in full-text search mode only.
-     *
-     * @example
-     * ```ts
-     * ai: {
-     *   embedders: {
-     *     'default': {
-     *       source: 'openAi',
-     *       model: 'text-embedding-3-small',
-     *       apiKey: process.env.OPENAI_API_KEY,
-     *       documentTemplate: "A product called '{{doc.productName}}' - {{doc.description | truncatewords: 20}}",
-     *     },
-     *   },
-     *   defaultEmbedder: 'default',
-     *   semanticRatio: 0.5,
-     * }
-     * ```
-     *
-     * @default undefined (AI search disabled)
-     */
-    ai?: AiSearchConfig;
-
     // ───────────────────────────── Relevancy Tuning ─────────────────────────────
 
     /**
@@ -408,41 +265,6 @@ export interface MeilisearchOptions {
      * @default undefined (Meilisearch defaults: typo tolerance enabled)
      */
     typoTolerance?: TypoToleranceConfig;
-}
-
-/**
- * @description
- * Configuration for AI-powered hybrid search.
- */
-export interface AiSearchConfig {
-    /**
-     * @description
-     * A map of embedder configurations. You can define multiple embedders
-     * for different use cases. At minimum, define one.
-     *
-     * The key is the embedder name, which is referenced when performing
-     * hybrid searches.
-     */
-    embedders: Record<string, EmbedderConfig>;
-    /**
-     * @description
-     * The name of the default embedder to use for hybrid search.
-     * Must match a key in the `embedders` map.
-     *
-     * @default The first key in `embedders`
-     */
-    defaultEmbedder?: string;
-    /**
-     * @description
-     * Controls the balance between full-text and semantic results.
-     *
-     * - `0.0` = pure full-text search (keywords only)
-     * - `0.5` = equal mix of full-text and semantic (recommended starting point)
-     * - `1.0` = pure semantic search (meaning only)
-     *
-     * @default 0.5
-     */
-    semanticRatio?: number;
 }
 
 /**
@@ -759,10 +581,9 @@ export interface SearchConfigDefaults {
 }
 
 export type MeilisearchRuntimeOptions = DeepRequired<
-    Omit<MeilisearchOptions, 'ai' | 'synonyms' | 'stopWords' | 'rankingRules' | 'typoTolerance' | 'searchConfig'>
+    Omit<MeilisearchOptions, 'synonyms' | 'stopWords' | 'rankingRules' | 'typoTolerance' | 'searchConfig'>
 > & {
     searchConfig: SearchConfigDefaults & Omit<SearchConfig, keyof SearchConfigDefaults>;
-    ai?: AiSearchConfig;
     synonyms?: Record<string, string[]>;
     stopWords?: string[];
     rankingRules?: string[];
@@ -795,14 +616,13 @@ export const defaultOptions: MeilisearchRuntimeOptions = {
 };
 
 export function mergeWithDefaults(userOptions: MeilisearchOptions): MeilisearchRuntimeOptions {
-    const { ai, synonyms, stopWords, rankingRules, typoTolerance, searchConfig, ...rest } = userOptions;
+    const { synonyms, stopWords, rankingRules, typoTolerance, searchConfig, ...rest } = userOptions;
     const merged = deepmerge(defaultOptions, rest) as MeilisearchRuntimeOptions;
     // Deep merge searchConfig to preserve user overrides alongside defaults
     if (searchConfig) {
         merged.searchConfig = deepmerge(defaultOptions.searchConfig, searchConfig) as MeilisearchRuntimeOptions['searchConfig'];
     }
     // These optional configs are not deep-merged to avoid weird array merging behavior
-    if (ai) merged.ai = ai;
     if (synonyms) merged.synonyms = synonyms;
     if (stopWords) merged.stopWords = stopWords;
     if (rankingRules) merged.rankingRules = rankingRules;

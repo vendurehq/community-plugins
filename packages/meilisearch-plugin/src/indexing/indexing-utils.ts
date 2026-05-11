@@ -44,7 +44,7 @@ export async function createIndex(
 
 /**
  * Configures a Meilisearch index with filterable, searchable, sortable, displayed attributes,
- * and optional relevancy settings (synonyms, stop words, ranking rules, typo tolerance, embedders).
+ * and optional relevancy settings (synonyms, stop words, ranking rules, typo tolerance).
  */
 export async function configureIndex(
     client: MeiliSearch,
@@ -154,36 +154,6 @@ export async function configureIndex(
         }
         const typoTask = await index.updateTypoTolerance(typoSettings);
         await client.tasks.waitForTask(typoTask.taskUid);
-    }
-
-    // ── AI embedders ──
-
-    if (options?.ai?.embedders && Object.keys(options.ai.embedders).length > 0) {
-        Logger.verbose(`Configuring AI embedders on "${indexUid}"...`, loggerCtx);
-        const embedderSettings: Record<string, any> = {};
-        for (const [name, config] of Object.entries(options.ai.embedders)) {
-            const embedder: any = { source: config.source };
-            if (config.model) embedder.model = config.model;
-            if (config.apiKey) embedder.apiKey = config.apiKey;
-            if (config.url) embedder.url = config.url;
-            if (config.documentTemplate) embedder.documentTemplate = config.documentTemplate;
-            if (config.documentTemplateMaxBytes) embedder.documentTemplateMaxBytes = config.documentTemplateMaxBytes;
-            if (config.dimensions) embedder.dimensions = config.dimensions;
-            if (config.request) embedder.request = config.request;
-            if (config.response) embedder.response = config.response;
-            if (config.headers) embedder.headers = config.headers;
-            embedderSettings[name] = embedder;
-        }
-        try {
-            const embedderTask = await index.updateEmbedders(embedderSettings);
-            await client.tasks.waitForTask(embedderTask.taskUid);
-            Logger.verbose(`AI embedders configured on "${indexUid}"`, loggerCtx);
-        } catch (e: any) {
-            Logger.warn(
-                `Could not configure AI embedders on "${indexUid}". AI search will not be available. Error: ${e.message}`,
-                loggerCtx,
-            );
-        }
     }
 
     Logger.verbose(`Index "${indexUid}" configured successfully`, loggerCtx);

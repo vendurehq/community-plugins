@@ -1,7 +1,7 @@
 {
     "name": "@vendure-community/meilisearch-plugin",
     "version": "1.0.0",
-    "description": "Vendure plugin for Meilisearch-powered product search with AI hybrid search support",
+    "description": "Vendure plugin for Meilisearch-powered product search",
     "license": "GPL-3.0-or-later",
     "main": "lib/index.js",
     "types": "lib/index.d.ts",
@@ -31,8 +31,7 @@
         "vendure-plugin",
         "meilisearch",
         "search",
-        "full-text-search",
-        "ai-search"
+        "full-text-search"
     ],
     "homepage": "https://www.vendure.io/",
     "funding": "https://github.com/sponsors/michaelbromley",
