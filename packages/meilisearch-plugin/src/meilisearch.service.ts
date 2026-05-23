@@ -449,32 +449,51 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
         max: number,
         interval: number,
     ): Promise<Array<{ to: number; count: number }>> {
-        const buckets: Array<{ to: number; count: number }> = [];
         if (min === 0 && max === 0) {
-            return buckets;
+            return [];
         }
+
+        // Build all bucket ranges upfront
+        const ranges: Array<{ start: number; end: number }> = [];
         let bucketStart = Math.floor(min / interval) * interval;
         while (bucketStart <= max) {
-            const bucketEnd = bucketStart + interval;
-            const bucketFilter = baseFilter
-                ? `${baseFilter} AND ${field} >= ${bucketStart} AND ${field} < ${bucketEnd}`
-                : `${field} >= ${bucketStart} AND ${field} < ${bucketEnd}`;
-
-            try {
-                const result = await index.search(term, {
-                    filter: bucketFilter,
-                    offset: 0,
-                    limit: 0,
-                });
-                const count = this.getTotalHitCount(result);
-                if (count > 0) {
-                    buckets.push({ to: bucketEnd, count });
-                }
-            } catch (e: any) {
-                Logger.warn(`Error generating price bucket for range ${bucketStart}-${bucketEnd}: ${e.message}`, loggerCtx);
-            }
-            bucketStart = bucketEnd;
+            ranges.push({ start: bucketStart, end: bucketStart + interval });
+            bucketStart += interval;
         }
+
+        // Execute in parallel batches with a concurrency cap to avoid
+        // overwhelming Meilisearch with too many simultaneous requests
+        const CONCURRENCY = 10;
+        const buckets: Array<{ to: number; count: number }> = [];
+
+        for (let i = 0; i < ranges.length; i += CONCURRENCY) {
+            const batch = ranges.slice(i, i + CONCURRENCY);
+            const results = await Promise.all(
+                batch.map(async ({ start, end }) => {
+                    const bucketFilter = baseFilter
+                        ? `${baseFilter} AND ${field} >= ${start} AND ${field} < ${end}`
+                        : `${field} >= ${start} AND ${field} < ${end}`;
+                    try {
+                        const result = await index.search(term, {
+                            filter: bucketFilter,
+                            offset: 0,
+                            limit: 0,
+                        });
+                        const count = this.getTotalHitCount(result);
+                        return count > 0 ? { to: end, count } : null;
+                    } catch (e: any) {
+                        Logger.warn(`Error generating price bucket for range ${start}-${end}: ${e.message}`, loggerCtx);
+                        return null;
+                    }
+                }),
+            );
+            for (const r of results) {
+                if (r) {
+                    buckets.push(r);
+                }
+            }
+        }
+
         return buckets;
     }
 

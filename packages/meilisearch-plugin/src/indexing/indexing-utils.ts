@@ -145,24 +145,20 @@ export async function configureIndex(
 
     // ── Optional relevancy settings ──
 
-    if (options?.synonyms && Object.keys(options.synonyms).length > 0) {
-        Logger.verbose(`Setting synonyms on "${indexUid}"...`, loggerCtx);
-        const bidirectionalSynonyms = expandSynonymsBidirectional(options.synonyms);
-        const synonymTask = await index.updateSynonyms(bidirectionalSynonyms);
-        await client.tasks.waitForTask(synonymTask.taskUid);
-    }
-
-    if (options?.stopWords && options.stopWords.length > 0) {
-        Logger.verbose(`Setting stop words on "${indexUid}"...`, loggerCtx);
-        const stopTask = await index.updateStopWords(options.stopWords);
-        await client.tasks.waitForTask(stopTask.taskUid);
-    }
-
-    if (options?.rankingRules && options.rankingRules.length > 0) {
-        Logger.verbose(`Setting ranking rules on "${indexUid}"...`, loggerCtx);
-        const rankTask = await index.updateRankingRules(options.rankingRules);
-        await client.tasks.waitForTask(rankTask.taskUid);
-    }
+    await applyOptionalSetting(client, indexUid, 'synonyms',
+        options?.synonyms && Object.keys(options.synonyms).length > 0
+            ? expandSynonymsBidirectional(options.synonyms)
+            : undefined,
+        value => index.updateSynonyms(value),
+    );
+    await applyOptionalSetting(client, indexUid, 'stop words',
+        options?.stopWords?.length ? options.stopWords : undefined,
+        value => index.updateStopWords(value),
+    );
+    await applyOptionalSetting(client, indexUid, 'ranking rules',
+        options?.rankingRules?.length ? options.rankingRules : undefined,
+        value => index.updateRankingRules(value),
+    );
 
     if (options?.typoTolerance) {
         Logger.verbose(`Configuring typo tolerance on "${indexUid}"...`, loggerCtx);
@@ -190,4 +186,23 @@ export async function configureIndex(
     }
 
     Logger.verbose(`Index "${indexUid}" configured successfully`, loggerCtx);
+}
+
+/**
+ * Applies an optional index setting if the value is defined.
+ * Logs the operation and waits for the Meilisearch task to complete.
+ */
+async function applyOptionalSetting(
+    client: MeiliSearch,
+    indexUid: string,
+    name: string,
+    value: any,
+    updaterFn: (value: any) => Promise<{ taskUid: number }>,
+): Promise<void> {
+    if (value === undefined || value === null) {
+        return;
+    }
+    Logger.verbose(`Setting ${name} on "${indexUid}"...`, loggerCtx);
+    const task = await updaterFn(value);
+    await client.tasks.waitForTask(task.taskUid);
 }
