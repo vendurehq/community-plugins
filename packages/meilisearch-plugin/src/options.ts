@@ -622,6 +622,21 @@ export const defaultOptions: MeilisearchRuntimeOptions = {
 export function mergeWithDefaults(userOptions: MeilisearchOptions): MeilisearchRuntimeOptions {
     const { synonyms, stopWords, rankingRules, typoTolerance, searchConfig, ...rest } = userOptions;
     const merged = deepmerge(defaultOptions, rest) as MeilisearchRuntimeOptions;
+
+    // Validate indexPrefix — Meilisearch only allows alphanumeric, hyphens, and underscores
+    // in index UIDs. Dots are converted to hyphens by getIndexUid(), but any other special
+    // characters are silently stripped, which could cause index collisions
+    // (e.g. 'shop@a-' and 'shopa-' would both become 'shopa-variants').
+    if (merged.indexPrefix) {
+        const normalized = merged.indexPrefix.replace(/\./g, '-');
+        if (/[^a-zA-Z0-9_-]/.test(normalized)) {
+            throw new Error(
+                `indexPrefix "${merged.indexPrefix}" contains invalid characters. ` +
+                `Only alphanumeric characters, hyphens, underscores, and dots are allowed.`,
+            );
+        }
+    }
+
     // Deep merge searchConfig to preserve user overrides alongside defaults
     if (searchConfig) {
         merged.searchConfig = deepmerge(defaultOptions.searchConfig, searchConfig) as MeilisearchRuntimeOptions['searchConfig'];
