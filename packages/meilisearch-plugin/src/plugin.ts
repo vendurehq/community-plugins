@@ -105,7 +105,7 @@ function getCustomResolvers(options: MeilisearchRuntimeOptions) {
             EntityMeilisearchResolver,
             ...getCustomResolvers(MeilisearchPlugin.options),
         ],
-        schema: () => generateSchemaExtensions(MeilisearchPlugin.options as any),
+        schema: () => generateSchemaExtensions(MeilisearchPlugin.options),
     },
     shopApiExtensions: {
         resolvers: () => [
@@ -113,7 +113,7 @@ function getCustomResolvers(options: MeilisearchRuntimeOptions) {
             EntityMeilisearchResolver,
             ...getCustomResolvers(MeilisearchPlugin.options),
         ],
-        schema: () => generateSchemaExtensions(MeilisearchPlugin.options as any),
+        schema: () => generateSchemaExtensions(MeilisearchPlugin.options),
     },
     compatibility: '^3.0.0',
 })
@@ -133,6 +133,9 @@ export class MeilisearchPlugin implements OnApplicationBootstrap {
      * Set the plugin options.
      */
     static init(options: MeilisearchOptions): Type<MeilisearchPlugin> {
+        if (this.options) {
+            Logger.warn('MeilisearchPlugin.init() called multiple times. Previous options will be overwritten.', loggerCtx);
+        }
         this.options = mergeWithDefaults(options);
         return MeilisearchPlugin;
     }
@@ -144,7 +147,7 @@ export class MeilisearchPlugin implements OnApplicationBootstrap {
             await this.meilisearchService.checkConnection();
         } catch (e: any) {
             Logger.error(`Could not connect to Meilisearch instance at "${host}"`, loggerCtx);
-            Logger.error(JSON.stringify(e), loggerCtx);
+            Logger.error(e.message, loggerCtx, e.stack);
             this.healthCheckRegistryService.registerIndicatorFunction(() =>
                 this.meilisearchHealthIndicator.startupCheckFailed(e.message),
             );
@@ -158,65 +161,63 @@ export class MeilisearchPlugin implements OnApplicationBootstrap {
         );
 
         this.eventBus.ofType(ProductEvent).subscribe(event => {
-            if (event.type === 'deleted') {
-                return this.meilisearchIndexService.deleteProduct(event.ctx, event.product);
-            } else {
-                return this.meilisearchIndexService.updateProduct(event.ctx, event.product);
-            }
+            const result = event.type === 'deleted'
+                ? this.meilisearchIndexService.deleteProduct(event.ctx, event.product)
+                : this.meilisearchIndexService.updateProduct(event.ctx, event.product);
+            result.catch(e => Logger.error(e.message, loggerCtx, e.stack));
         });
         this.eventBus.ofType(ProductVariantEvent).subscribe(event => {
-            if (event.type === 'deleted') {
-                return this.meilisearchIndexService.deleteVariant(event.ctx, event.variants);
-            } else {
-                return this.meilisearchIndexService.updateVariants(event.ctx, event.variants);
-            }
+            const result = event.type === 'deleted'
+                ? this.meilisearchIndexService.deleteVariant(event.ctx, event.variants)
+                : this.meilisearchIndexService.updateVariants(event.ctx, event.variants);
+            result.catch(e => Logger.error(e.message, loggerCtx, e.stack));
         });
         this.eventBus.ofType(AssetEvent).subscribe(event => {
             if (event.type === 'updated') {
-                return this.meilisearchIndexService.updateAsset(event.ctx, event.asset);
+                this.meilisearchIndexService.updateAsset(event.ctx, event.asset)
+                    .catch(e => Logger.error(e.message, loggerCtx, e.stack));
             }
             if (event.type === 'deleted') {
-                return this.meilisearchIndexService.deleteAsset(event.ctx, event.asset);
+                this.meilisearchIndexService.deleteAsset(event.ctx, event.asset)
+                    .catch(e => Logger.error(e.message, loggerCtx, e.stack));
             }
         });
 
         this.eventBus.ofType(ProductChannelEvent).subscribe(event => {
-            if (event.type === 'assigned') {
-                return this.meilisearchIndexService.assignProductToChannel(
+            const result = event.type === 'assigned'
+                ? this.meilisearchIndexService.assignProductToChannel(
+                    event.ctx,
+                    event.product,
+                    event.channelId,
+                )
+                : this.meilisearchIndexService.removeProductFromChannel(
                     event.ctx,
                     event.product,
                     event.channelId,
                 );
-            } else {
-                return this.meilisearchIndexService.removeProductFromChannel(
-                    event.ctx,
-                    event.product,
-                    event.channelId,
-                );
-            }
+            result.catch(e => Logger.error(e.message, loggerCtx, e.stack));
         });
 
         this.eventBus.ofType(ProductVariantChannelEvent).subscribe(event => {
-            if (event.type === 'assigned') {
-                return this.meilisearchIndexService.assignVariantToChannel(
+            const result = event.type === 'assigned'
+                ? this.meilisearchIndexService.assignVariantToChannel(
+                    event.ctx,
+                    event.productVariant.id,
+                    event.channelId,
+                )
+                : this.meilisearchIndexService.removeVariantFromChannel(
                     event.ctx,
                     event.productVariant.id,
                     event.channelId,
                 );
-            } else {
-                return this.meilisearchIndexService.removeVariantFromChannel(
-                    event.ctx,
-                    event.productVariant.id,
-                    event.channelId,
-                );
-            }
+            result.catch(e => Logger.error(e.message, loggerCtx, e.stack));
         });
 
         this.eventBus.ofType(StockMovementEvent).subscribe(event => {
-            return this.meilisearchIndexService.updateVariants(
+            this.meilisearchIndexService.updateVariants(
                 event.ctx,
                 event.stockMovements.map(m => m.productVariant),
-            );
+            ).catch(e => Logger.error(e.message, loggerCtx, e.stack));
         });
 
         // Buffer collection modification events to batch process them
@@ -233,7 +234,8 @@ export class MeilisearchPlugin implements OnApplicationBootstrap {
                 filter(e => 0 < e.ids.length),
             )
             .subscribe(events => {
-                return this.meilisearchIndexService.updateVariantsById(events.ctx, events.ids);
+                this.meilisearchIndexService.updateVariantsById(events.ctx, events.ids)
+                    .catch(e => Logger.error(e.message, loggerCtx, e.stack));
             });
 
         this.eventBus
@@ -242,7 +244,8 @@ export class MeilisearchPlugin implements OnApplicationBootstrap {
             .subscribe(event => {
                 const defaultTaxZone = event.ctx.channel.defaultTaxZone;
                 if (defaultTaxZone && idsAreEqual(defaultTaxZone.id, event.taxRate.zone.id)) {
-                    return this.meilisearchService.reindex(event.ctx);
+                    this.meilisearchService.reindex(event.ctx)
+                        .catch(e => Logger.error(e.message, loggerCtx, e.stack));
                 }
             });
     }

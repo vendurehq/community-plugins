@@ -1,9 +1,9 @@
 import { DocumentNode } from 'graphql';
 import { gql } from 'graphql-tag';
 
-import { MeilisearchOptions } from '../options';
+import { MeilisearchOptions, MeilisearchRuntimeOptions } from '../options';
 
-export function generateSchemaExtensions(options: MeilisearchOptions): DocumentNode {
+export function generateSchemaExtensions(options: MeilisearchOptions | MeilisearchRuntimeOptions): DocumentNode {
     const customMappingTypes = generateCustomMappingTypes(options);
     const inputExtensions = Object.entries(options.extendSearchInputType || {});
     const sortExtensions = options.extendSearchSortType || [];
@@ -55,7 +55,7 @@ export function generateSchemaExtensions(options: MeilisearchOptions): DocumentN
     `;
 }
 
-function generateCustomMappingTypes(options: MeilisearchOptions): DocumentNode | undefined {
+function generateCustomMappingTypes(options: MeilisearchOptions | MeilisearchRuntimeOptions): DocumentNode | undefined {
     const productMappings = Object.entries(options.customProductMappings || {}).filter(
         ([, value]) => value.public ?? true,
     );

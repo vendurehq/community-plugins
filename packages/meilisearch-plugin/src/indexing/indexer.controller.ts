@@ -128,11 +128,14 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
 
     /**
      * Updates the search index when a product is assigned to a channel.
+     * The `channelId` parameter is intentionally unused — by the time this handler
+     * runs, the ProductChannelEvent has already mutated the DB, and
+     * `updateProductsInternal` re-reads the current channel bindings.
      */
     async assignProductToChannel({
         ctx: rawContext,
         productId,
-        channelId,
+        channelId: _channelId,
     }: ProductChannelMessageData): Promise<boolean> {
         const ctx = MutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, [productId]);
@@ -141,11 +144,12 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
 
     /**
      * Updates the search index when a product is removed from a channel.
+     * See `assignProductToChannel` for why `channelId` is unused.
      */
     async removeProductFromChannel({
         ctx: rawContext,
         productId,
-        channelId,
+        channelId: _channelId,
     }: ProductChannelMessageData): Promise<boolean> {
         const ctx = MutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, [productId]);
@@ -392,6 +396,10 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
     /**
      * Meilisearch doesn't have update_by_query, so we fetch matching documents,
      * modify them, and re-add them (which upserts).
+     *
+     * Note: `offset += limit` is safe here because the upserted documents still
+     * match the original filter (the asset id is unchanged), so the search result
+     * set remains stable across pages.
      */
     private async updateAssetDocuments(
         index: Index,
@@ -715,10 +723,10 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
                 collectionSlugs: collectionTranslations.map(c => c.slug),
                 enabled: v.enabled && v.product.enabled,
                 productEnabled: variants.some(variant => variant.enabled) && v.product.enabled,
-                productPriceMin: Math.min(...prices),
-                productPriceMax: Math.max(...prices),
-                productPriceWithTaxMin: Math.min(...pricesWithTax),
-                productPriceWithTaxMax: Math.max(...pricesWithTax),
+                productPriceMin: prices.reduce((a, b) => Math.min(a, b), Infinity),
+                productPriceMax: prices.reduce((a, b) => Math.max(a, b), -Infinity),
+                productPriceWithTaxMin: pricesWithTax.reduce((a, b) => Math.min(a, b), Infinity),
+                productPriceWithTaxMax: pricesWithTax.reduce((a, b) => Math.max(a, b), -Infinity),
                 productFacetIds: this.getFacetIds(variants),
                 productFacetValueIds: this.getFacetValueIds(variants),
                 productCollectionIds: unique(
@@ -854,6 +862,9 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
         return unique([...variantFacetValueIds, ...productFacetValueIds]);
     }
 
+    // Note: uses `_` as separator without escaping. This assumes channel IDs and
+    // entity IDs do not contain underscores. This matches the elasticsearch-plugin
+    // convention. Custom ID strategies using `_` could cause collisions.
     static getId(entityId: ID, channelId: ID, languageCode: LanguageCode): string {
         return `${channelId.toString()}_${entityId.toString()}_${languageCode}`;
     }

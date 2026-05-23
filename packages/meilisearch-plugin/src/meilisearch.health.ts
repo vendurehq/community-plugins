@@ -13,8 +13,7 @@ export class MeilisearchHealthIndicator extends HealthIndicator {
         let isHealthy = false;
         let error = '';
         try {
-            await this.meilisearchService.checkConnection();
-            isHealthy = true;
+            isHealthy = await this.meilisearchService.ping();
         } catch (e: any) {
             error = e.message;
         }

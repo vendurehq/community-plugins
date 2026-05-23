@@ -62,6 +62,14 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
         // MeiliSearch JS client has no close/cleanup method
     }
 
+    /**
+     * Extracts the total hit count from a Meilisearch search result,
+     * handling both `estimatedTotalHits` and `totalHits` response fields.
+     */
+    private getTotalHitCount(result: any): number {
+        return result.estimatedTotalHits || result.totalHits || 0;
+    }
+
     async checkConnection(): Promise<void> {
         const { connectionAttempts, connectionAttemptInterval } = this.options;
         let attempts = 0;
@@ -87,6 +95,15 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
             await new Promise(resolve1 => setTimeout(resolve1, connectionAttemptInterval));
         }
         throw new Error('Could not connect to Meilisearch. Aborting bootstrap.');
+    }
+
+    /**
+     * Single health ping without retry loop. Used by the health check indicator
+     * to fail fast instead of blocking for up to connectionAttempts × connectionAttemptInterval.
+     */
+    async ping(): Promise<boolean> {
+        const health = await this.client.health();
+        return health.status === 'available';
     }
 
     async createIndicesIfNotExists(): Promise<void> {
@@ -206,7 +223,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
             } else {
                 return {
                     items: result.hits.map((hit: any) => this.mapVariantToSearchResult(hit)),
-                    totalItems: (result as any).estimatedTotalHits || (result as any).totalHits || 0,
+                    totalItems: this.getTotalHitCount(result),
                 };
             }
         } catch (e: any) {
@@ -244,7 +261,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
                 if (facetDist) {
                     return Object.keys(facetDist).length;
                 }
-                return (result as any).estimatedTotalHits || (result as any).totalHits || 0;
+                return this.getTotalHitCount(result);
             } catch (e: any) {
                 Logger.error(e.message, loggerCtx, e.stack);
                 return 0;
@@ -255,7 +272,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
                 offset: 0,
                 limit: 0,
             });
-            return (result as any).estimatedTotalHits || (result as any).totalHits || 0;
+            return this.getTotalHitCount(result);
         }
     }
 
@@ -449,7 +466,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
                     offset: 0,
                     limit: 0,
                 });
-                const count = (result).estimatedTotalHits || (result).totalHits || 0;
+                const count = this.getTotalHitCount(result);
                 if (count > 0) {
                     buckets.push({ to: bucketEnd, count });
                 }

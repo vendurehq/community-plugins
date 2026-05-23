@@ -11,6 +11,7 @@ import {
     ProductVariant,
     RequestContext,
 } from '@vendure/core';
+import { JsonCompatible } from '@vendure/common/lib/shared-types';
 import { Observable } from 'rxjs';
 
 import { loggerCtx } from '../constants';
@@ -165,14 +166,14 @@ export class MeilisearchIndexService implements OnApplicationBootstrap {
 
     updateAsset(ctx: RequestContext, asset: Asset) {
         return this.updateIndexQueue.add(
-            { type: 'update-asset', ctx: ctx.serialize(), asset: asset as any },
+            { type: 'update-asset', ctx: ctx.serialize(), asset: asset as unknown as JsonCompatible<Required<Asset>> },
             { ctx },
         );
     }
 
     deleteAsset(ctx: RequestContext, asset: Asset) {
         return this.updateIndexQueue.add(
-            { type: 'delete-asset', ctx: ctx.serialize(), asset: asset as any },
+            { type: 'delete-asset', ctx: ctx.serialize(), asset: asset as unknown as JsonCompatible<Required<Asset>> },
             { ctx },
         );
     }
