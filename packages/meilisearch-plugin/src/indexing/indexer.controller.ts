@@ -281,9 +281,10 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
                 } while (productIds.length >= this.options.reindexProductsChunkSize);
 
                 // Atomically swap the temporary index with the primary index.
-                // The standard swap (without `rename`) exchanges documents, settings,
-                // and task history between the two indexes. This preserves all index
-                // configuration.
+                // Meilisearch's swapIndexes exchanges documents, settings (filterable,
+                // searchable, sortable attributes, synonyms, typo tolerance, etc.),
+                // and task history between the two indexes in a single atomic operation.
+                // See: https://www.meilisearch.com/docs/reference/api/swap_indexes
                 try {
                     // Ensure the primary index exists before swapping
                     await createIndex(this.client, primaryIndexUid, 'id');
@@ -298,13 +299,14 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
                     await this.client.tasks.waitForTask(deleteTask.taskUid);
                 } catch (e: any) {
                     Logger.error('Could not swap indexes.', loggerCtx);
-                    Logger.error(JSON.stringify(e), loggerCtx);
+                    Logger.error(e.message, loggerCtx, e.stack);
                     // Try to clean up the temp index
                     try {
                         await this.client.deleteIndex(tempIndexUid);
                     } catch {
                         // ignore cleanup errors
                     }
+                    throw e;
                 }
 
                 Logger.verbose('Completed reindexing!', loggerCtx);
@@ -560,9 +562,7 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
             .leftJoin('product.translations', 'productTranslations')
             .leftJoin('product.variants', 'productVariant')
             .leftJoin('productVariant.translations', 'productVariantTranslations')
-            .leftJoin('product.channels', 'channel')
             .where('product.id = :productId', { productId })
-            .andWhere('channel.id = :channelId', { channelId: ctx.channelId })
             .getOne();
 
         if (!product) return;
