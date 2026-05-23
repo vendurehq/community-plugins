@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SearchResultAsset } from '@vendure/common/lib/generated-types';
 import { LogicalOperator, SortOrder } from '@vendure/common/lib/generated-types';
 import {
@@ -35,7 +35,7 @@ import {
 } from './types';
 
 @Injectable()
-export class MeilisearchService implements OnModuleInit {
+export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
     private client: MeiliSearch;
 
     constructor(
@@ -51,7 +51,15 @@ export class MeilisearchService implements OnModuleInit {
     }
 
     onModuleInit(): any {
+        // The MeiliSearch JS client is stateless — it wraps fetch with config
+        // and does not maintain connection pools or persistent connections.
+        // A separate instance in MeilisearchIndexerController is intentional:
+        // each service owns its own client for clarity and lifecycle isolation.
         this.client = getClient(this.options);
+    }
+
+    onModuleDestroy(): any {
+        // MeiliSearch JS client has no close/cleanup method
     }
 
     async checkConnection(): Promise<void> {
@@ -445,8 +453,8 @@ export class MeilisearchService implements OnModuleInit {
                 if (count > 0) {
                     buckets.push({ to: bucketEnd, count });
                 }
-            } catch {
-                // Skip this bucket if search fails
+            } catch (e: any) {
+                Logger.warn(`Error generating price bucket for range ${bucketStart}-${bucketEnd}: ${e.message}`, loggerCtx);
             }
             bucketStart = bucketEnd;
         }

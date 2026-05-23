@@ -89,6 +89,10 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
     ) {}
 
     onModuleInit(): any {
+        // The MeiliSearch JS client is stateless — it wraps fetch with config
+        // and does not maintain connection pools or persistent connections.
+        // A separate instance in MeilisearchService is intentional:
+        // each service owns its own client for clarity and lifecycle isolation.
         this.client = getClient(this.options);
         this.productRelations = this.getReindexRelations(
             defaultProductRelations,
@@ -532,7 +536,8 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
             await this.client.tasks.waitForTask(task.taskUid);
             Logger.debug(`Added ${documents.length} documents to index [${index.uid}]`, loggerCtx);
         } catch (e: any) {
-            Logger.error(`Error adding documents: ${JSON.stringify(e)}`, loggerCtx);
+            Logger.error(`Error adding documents: ${e.message}`, loggerCtx, e.stack);
+            throw e;
         }
     }
 
@@ -607,7 +612,8 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
                     await this.client.tasks.waitForTask(task.taskUid);
                     Logger.debug(`Deleted ${chunk.length} documents from index [${index.uid}]`, loggerCtx);
                 } catch (e: any) {
-                    Logger.error(`Error deleting documents: ${JSON.stringify(e)}`, loggerCtx);
+                    Logger.error(`Error deleting documents: ${e.message}`, loggerCtx, e.stack);
+                    throw e;
                 }
             }
         }
