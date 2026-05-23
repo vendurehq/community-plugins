@@ -184,11 +184,13 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
 
     async deleteVariants({ ctx: rawContext, variantIds }: UpdateVariantMessageData): Promise<boolean> {
         const ctx = MutableRequestContext.deserialize(rawContext);
-        const productIds = await this.getProductIdsByVariantIds(variantIds);
-        for (const productId of productIds) {
-            await this.updateProductsInternal(ctx, [productId]);
-        }
-        return true;
+        return this.asyncQueue.push(async () => {
+            const productIds = await this.getProductIdsByVariantIds(variantIds);
+            for (const productId of productIds) {
+                await this.updateProductsInternal(ctx, [productId]);
+            }
+            return true;
+        });
     }
 
     updateVariantsById({
@@ -741,8 +743,8 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
             }
             return item;
         } catch (err: any) {
-            Logger.error(err.toString());
-            throw Error('Error while reindexing!');
+            Logger.error(err.message, loggerCtx, err.stack);
+            throw err;
         }
     }
 
