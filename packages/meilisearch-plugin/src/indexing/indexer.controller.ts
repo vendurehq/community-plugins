@@ -805,6 +805,10 @@ export class MeilisearchIndexerController implements OnModuleInit, OnModuleDestr
             productVariantPreviewFocalPoint: undefined,
             price: 0,
             priceWithTax: 0,
+            // Note: prices are indexed in the channel's default currency only,
+            // applied via productPriceApplicator.applyChannelPriceAndTax().
+            // Multi-currency channels will only have the default currency indexed.
+            // This is consistent with the elasticsearch-plugin's behavior.
             currencyCode: ctx.currencyCode,
             description: productTranslation.description,
             facetIds: product.facetValues?.map(fv => fv.facet.id.toString()) ?? [],

@@ -1,6 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SearchResultAsset } from '@vendure/common/lib/generated-types';
-import { LogicalOperator, SortOrder } from '@vendure/common/lib/generated-types';
 import {
     Collection,
     CollectionService,
@@ -17,8 +16,9 @@ import {
     SearchEvent,
     SearchService,
 } from '@vendure/core';
-import { UserInputError } from '@vendure/core';
 import { MeiliSearch } from 'meilisearch';
+
+import { buildFilter, buildSort } from './build-search-query';
 
 import { MEILISEARCH_OPTIONS, loggerCtx, VARIANT_INDEX_NAME } from './constants';
 import { getClient, getIndexUid, createIndex, configureIndex } from './indexing/indexing-utils';
@@ -136,8 +136,8 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
             );
         }
 
-        const filter = this.buildFilter(ctx, input, enabledOnly);
-        const sort = this.buildSort(input);
+        const filter = buildFilter(ctx, input, enabledOnly);
+        const sort = buildSort(input, this.options);
         const offset = input.skip || 0;
         const limit = input.take || 10;
 
@@ -241,7 +241,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
         const index = this.client.index(indexUid);
         const { groupByProduct, groupBySKU } = input;
 
-        const filter = this.buildFilter(ctx, input, enabledOnly);
+        const filter = buildFilter(ctx, input, enabledOnly);
 
         if (groupByProduct || groupBySKU) {
             // To count distinct productIds or SKUs, we search with distinct and use facets
@@ -286,7 +286,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
     ): Promise<Array<{ facetValue: FacetValue; count: number }>> {
         const indexUid = getIndexUid(this.options.indexPrefix, VARIANT_INDEX_NAME);
         const index = this.client.index(indexUid);
-        const filter = this.buildFilter(ctx, input, enabledOnly);
+        const filter = buildFilter(ctx, input, enabledOnly);
 
         try {
             const { groupByProduct } = input;
@@ -334,7 +334,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
     ): Promise<Array<{ collection: Collection; count: number }>> {
         const indexUid = getIndexUid(this.options.indexPrefix, VARIANT_INDEX_NAME);
         const index = this.client.index(indexUid);
-        const filter = this.buildFilter(ctx, input, enabledOnly);
+        const filter = buildFilter(ctx, input, enabledOnly);
 
         try {
             const { groupByProduct } = input;
@@ -375,7 +375,7 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
     async priceRange(ctx: RequestContext, input: MeilisearchSearchInput): Promise<SearchPriceData> {
         const indexUid = getIndexUid(this.options.indexPrefix, VARIANT_INDEX_NAME);
         const index = this.client.index(indexUid);
-        const filter = this.buildFilter(ctx, input, true);
+        const filter = buildFilter(ctx, input, true);
 
         try {
             const result = await index.search(input.term || '', {
@@ -495,122 +495,6 @@ export class MeilisearchService implements OnModuleInit, OnModuleDestroy {
         }
 
         return buckets;
-    }
-
-    /**
-     * Escapes special characters in a value before interpolating it into
-     * a Meilisearch filter string. Prevents filter injection via user-supplied
-     * values like collection slugs or facet value IDs.
-     */
-    private escapeFilterValue(value: string | number): string {
-        return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    }
-
-    private buildFilter(
-        ctx: RequestContext,
-        input: MeilisearchSearchInput,
-        enabledOnly: boolean,
-    ): string {
-        const filterParts: string[] = [];
-        const esc = (v: string | number) => this.escapeFilterValue(v);
-
-        filterParts.push(`channelId = "${esc(ctx.channelId)}"`);
-        filterParts.push(`languageCode = "${esc(ctx.languageCode)}"`);
-
-        if (enabledOnly) {
-            filterParts.push('enabled = true');
-        }
-
-        const {
-            facetValueIds,
-            facetValueOperator,
-            facetValueFilters,
-            collectionId,
-            collectionSlug,
-            groupByProduct,
-            priceRange,
-            priceRangeWithTax,
-            inStock,
-        } = input;
-
-        if (facetValueIds && facetValueIds.length) {
-            if (facetValueOperator === LogicalOperator.AND) {
-                for (const id of facetValueIds) {
-                    filterParts.push(`facetValueIds = "${esc(id)}"`);
-                }
-            } else {
-                const orParts = facetValueIds.map(id => `facetValueIds = "${esc(id)}"`);
-                filterParts.push(`(${orParts.join(' OR ')})`);
-            }
-        }
-
-        if (facetValueFilters && facetValueFilters.length) {
-            for (const facetValueFilter of facetValueFilters) {
-                if (facetValueFilter.and && facetValueFilter.or && facetValueFilter.or.length) {
-                    throw new UserInputError('error.facetfilterinput-invalid-input');
-                }
-                if (facetValueFilter.and) {
-                    filterParts.push(`facetValueIds = "${esc(facetValueFilter.and)}"`);
-                }
-                if (facetValueFilter.or && facetValueFilter.or.length) {
-                    const orParts = facetValueFilter.or.map(id => `facetValueIds = "${esc(id)}"`);
-                    filterParts.push(`(${orParts.join(' OR ')})`);
-                }
-            }
-        }
-
-        if (collectionId) {
-            filterParts.push(`collectionIds = "${esc(collectionId)}"`);
-        }
-        const collectionIds = input.collectionIds as string[] | undefined;
-        if (collectionIds && collectionIds.length) {
-            const uniqueIds = Array.from(new Set(collectionIds));
-            const orParts = uniqueIds.map(id => `collectionIds = "${esc(id)}"`);
-            filterParts.push(`(${orParts.join(' OR ')})`);
-        }
-        if (collectionSlug) {
-            filterParts.push(`collectionSlugs = "${esc(collectionSlug)}"`);
-        }
-        const collectionSlugs: string[] | undefined = input.collectionSlugs;
-        if (collectionSlugs && collectionSlugs.length) {
-            const uniqueSlugs = Array.from(new Set(collectionSlugs));
-            const orParts = uniqueSlugs.map(slug => `collectionSlugs = "${esc(slug)}"`);
-            filterParts.push(`(${orParts.join(' OR ')})`);
-        }
-
-        if (priceRange) {
-            filterParts.push(`price >= ${Number(priceRange.min)}`);
-            filterParts.push(`price <= ${Number(priceRange.max)}`);
-        }
-        if (priceRangeWithTax) {
-            filterParts.push(`priceWithTax >= ${Number(priceRangeWithTax.min)}`);
-            filterParts.push(`priceWithTax <= ${Number(priceRangeWithTax.max)}`);
-        }
-
-        if (inStock !== undefined) {
-            if (groupByProduct) {
-                filterParts.push(`productInStock = ${inStock}`);
-            } else {
-                filterParts.push(`inStock = ${inStock}`);
-            }
-        }
-
-        return filterParts.join(' AND ');
-    }
-
-    private buildSort(input: MeilisearchSearchInput): string[] {
-        const sortArray: string[] = [];
-        if (input.sort) {
-            if (input.sort.name) {
-                sortArray.push(`productName:${input.sort.name === SortOrder.ASC ? 'asc' : 'desc'}`);
-            }
-            if (input.sort.price) {
-                sortArray.push(`price:${input.sort.price === SortOrder.ASC ? 'asc' : 'desc'}`);
-            }
-        }
-        return this.options.searchConfig.mapSort
-            ? this.options.searchConfig.mapSort(sortArray, input)
-            : sortArray;
     }
 
     private mapVariantToSearchResult(hit: any): MeilisearchSearchResult {
