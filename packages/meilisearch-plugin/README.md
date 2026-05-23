@@ -2,6 +2,8 @@
 
 A Vendure plugin that replaces the default search with [Meilisearch](https://www.meilisearch.com/) — a fast, typo-tolerant search engine with full-text search.
 
+> **Note:** This plugin is a drop-in replacement for the `DefaultSearchPlugin`. Make sure to remove `DefaultSearchPlugin` from your Vendure config before adding `MeilisearchPlugin`.
+
 ## Features
 
 - Full-text search with typo tolerance, synonyms, and stop words
@@ -15,7 +17,7 @@ A Vendure plugin that replaces the default search with [Meilisearch](https://www
 ## Requirements
 
 - Vendure `^3.0.0`
-- A running [Meilisearch](https://www.meilisearch.com/docs/learn/getting_started/cloud_quick_start) instance (v1.6+)
+- A running [Meilisearch](https://www.meilisearch.com/docs/learn/getting_started/cloud_quick_start) instance **v1.6 or later** (required for `matchingStrategy: 'frequency'`, `distinct`, `facetStats`, and `swapIndexes` features used by this plugin)
 
 ## Installation
 
@@ -290,6 +292,39 @@ mutation { reindex { ... } }
 # Run buffered updates (when bufferUpdates: true)
 mutation { runPendingSearchIndexUpdates { ... } }
 ```
+
+## Buffered Updates
+
+By default, changes to products, variants, and collections trigger immediate index updates. For high-traffic stores where frequent writes cause excessive indexing load, enable buffered updates:
+
+```ts
+MeilisearchPlugin.init({
+  bufferUpdates: true,
+  // ...
+})
+```
+
+When enabled, index updates are accumulated and only applied when you explicitly run:
+
+```graphql
+mutation { runPendingSearchIndexUpdates { success } }
+```
+
+This can be triggered on a schedule (e.g. via a cron job or the Vendure `SchedulerPlugin`) to batch updates.
+
+## Troubleshooting
+
+### Meilisearch is unreachable at startup
+
+The plugin retries the connection up to `connectionAttempts` times (default: 10) with `connectionAttemptInterval` ms between retries (default: 5000ms). If all attempts fail, the server starts but search will not work and the health check will report unhealthy. Check that your Meilisearch instance is running and accessible at the configured `host`.
+
+### Search returns no results after startup
+
+Run the `reindex` mutation from the Admin API. The plugin does not automatically populate the index on first startup — an explicit reindex is required.
+
+### Stale results after product changes
+
+If `bufferUpdates` is enabled, changes are not applied until `runPendingSearchIndexUpdates` is called. If `bufferUpdates` is `false` (default), updates should be near-instant — check that the Vendure job queue is running.
 
 ## Custom Mappings
 
