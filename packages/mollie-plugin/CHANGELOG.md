@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 1.0.1 (2026-05-27)
+
+### Bug Fixes
+
+* **mollie-plugin:** wrap addPayment in transaction ([#33](https://github.com/vendurehq/community-plugins/pull/33))
+
 ## 1.0.0 (2026-03-30)
 
 Initial release as `@vendure-community/mollie-plugin`, extracted from `@vendure/payments-plugin`.
