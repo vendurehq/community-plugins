@@ -1,4 +1,5 @@
 import type { SearchClientAdapter } from '../src/adapter';
+
 import { createElasticsearchAdapter, createOpenSearchAdapter } from '../src/adapter';
 
 

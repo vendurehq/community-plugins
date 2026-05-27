@@ -72,7 +72,7 @@ describe('indexing id helpers', () => {
         it('falls back to [defaultCurrencyCode] when indexCurrencyCode is enabled but availableCurrencyCodes is undefined', () => {
             const channel = new Channel({
                 defaultCurrencyCode: CurrencyCode.GBP,
-            } as Partial<Channel>);
+            });
             expect(resolveChannelIndexCurrencies(true, channel)).toEqual([CurrencyCode.GBP]);
         });
     });
