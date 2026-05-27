@@ -1,18 +1,21 @@
 name: Publish to NPM
 
-# This workflow handles all publishing to npm for releases and nightly
-# pre-release builds. We use a single workflow file because npm Trusted
-# Publishing currently supports only a single workflow file.
+# This workflow publishes packages to npm. We use a single workflow file because
+# npm Trusted Publishing currently supports only a single workflow file.
 #
-# Release flow:
-#   gh release create elasticsearch-plugin/v1.1.0 --title "@vendure-community/elasticsearch-plugin v1.1.0" --generate-notes
-#   This triggers the workflow, which parses the tag to determine the package
-#   and version, bumps package.json, builds, publishes, and commits the version
-#   bump back to main.
+# Stable release flow (manual):
+#   1. Locally: `bun run release <package>` — bumps version, writes CHANGELOG, commits, tags.
+#   2. `git push --follow-tags origin main`
+#   3. GitHub → Actions → "Publish to NPM" → Run workflow → publish_type: release, package: <package>
+#   The workflow reads the version from the package's package.json, builds, and publishes.
+#   A pre-release version (containing a hyphen, e.g. 1.1.0-rc.0) is published to the `next`
+#   dist-tag; a stable version is published to `latest`.
+#
+# Nightly pre-release flow (automatic):
+#   Runs at 03:00 UTC. If there were commits in the last 25h, every package is bumped to a
+#   timestamped pre-release version and published to the `dev` dist-tag.
 
 on:
-    release:
-        types: [published]
     schedule:
         - cron: '0 3 * * *' # Nightly at 03:00 UTC
     workflow_dispatch:
@@ -22,9 +25,11 @@ on:
                 required: true
                 type: choice
                 options:
+                    - release
                     - nightly
+                default: release
             package:
-                description: 'Package to publish (leave "all" for all packages)'
+                description: 'Package to publish (release requires a single package; nightly accepts "all")'
                 required: false
                 type: choice
                 options:
@@ -37,7 +42,7 @@ on:
                     - stellate-plugin
                     - stripe-plugin
                     - pub-sub-plugin
-                default: 'all'
+                default: all
             dry-run:
                 description: 'Dry run (no actual publish)'
                 required: false
@@ -49,54 +54,29 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             publish_type: ${{ steps.determine.outputs.publish_type }}
-            package_name: ${{ steps.parse_tag.outputs.package_name }}
-            version: ${{ steps.parse_tag.outputs.version }}
-            dist_tag: ${{ steps.parse_tag.outputs.dist_tag }}
         steps:
             - name: Determine publish type
               id: determine
               run: |
-                  if [ "${{ github.event_name }}" == "release" ]; then
-                    echo "publish_type=release" >> $GITHUB_OUTPUT
-                  elif [ "${{ github.event_name }}" == "schedule" ]; then
+                  if [ "${{ github.event_name }}" == "schedule" ]; then
                     echo "publish_type=nightly" >> $GITHUB_OUTPUT
                   else
                     echo "publish_type=${{ inputs.publish_type }}" >> $GITHUB_OUTPUT
                   fi
 
-            # For releases: parse the tag to get package name and version
-            # Tag format: <package-name>/v<version> (e.g. elasticsearch-plugin/v1.1.0)
-            # Pre-release versions are supported (e.g. elasticsearch-plugin/v1.1.0-rc.1)
-            - name: Parse release tag
-              id: parse_tag
-              if: github.event_name == 'release'
+            - name: Validate release inputs
+              if: github.event_name == 'workflow_dispatch' && inputs.publish_type == 'release'
               run: |
-                  TAG="${{ github.event.release.tag_name }}"
-                  PACKAGE_NAME="${TAG%/v*}"
-                  VERSION="${TAG#*/v}"
-                  echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-                  # Validate tag format (semver with optional pre-release suffix)
-                  if [[ ! "$TAG" =~ ^[a-z-]+/v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-                    echo "::error::Invalid tag format '$TAG'. Expected '<package-name>/v<semver>' (e.g. elasticsearch-plugin/v1.1.0 or elasticsearch-plugin/v1.1.0-rc.1)"
+                  if [ -z "${{ inputs.package }}" ] || [ "${{ inputs.package }}" == "all" ]; then
+                    echo "::error::A stable release requires a single package — 'all' is not allowed. Select one package."
                     exit 1
-                  fi
-
-                  # Determine npm dist-tag: pre-release versions get 'next', stable gets 'latest'
-                  if [[ "$VERSION" =~ - ]]; then
-                    echo "dist_tag=next" >> $GITHUB_OUTPUT
-                    echo "Releasing @vendure-community/$PACKAGE_NAME@$VERSION (pre-release → next tag)"
-                  else
-                    echo "dist_tag=latest" >> $GITHUB_OUTPUT
-                    echo "Releasing @vendure-community/$PACKAGE_NAME@$VERSION (stable → latest tag)"
                   fi
 
     publish:
         needs: setup
         runs-on: ubuntu-latest
         permissions:
-            contents: write
+            contents: read
             id-token: write
         steps:
             - name: Checkout
@@ -122,8 +102,19 @@ jobs:
               if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'false'
               run: echo "No new commits in last 25 hours – skipping nightly publish."
 
+            # Gate the remaining steps: run for a release, or for a nightly that has new commits.
+            - name: Should run
+              id: should_run
+              run: |
+                  if [ "${{ needs.setup.outputs.publish_type }}" == "release" ] || \
+                     [ "${{ steps.commit_check.outputs.should_publish }}" == "true" ]; then
+                    echo "run=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "run=false" >> $GITHUB_OUTPUT
+                  fi
+
             - name: Setup Node.js
-              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              if: steps.should_run.outputs.run == 'true'
               uses: actions/setup-node@v4
               with:
                   node-version: '24.x'
@@ -132,58 +123,59 @@ jobs:
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
               with:
                   bun-version: 1.3.10
+
             - name: Update npm
-              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              if: steps.should_run.outputs.run == 'true'
               run: npm install -g npm@11
 
             - name: Install dependencies
-              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              if: steps.should_run.outputs.run == 'true'
               run: bun install --frozen-lockfile
 
             - name: Build
-              if: needs.setup.outputs.publish_type == 'release' || steps.commit_check.outputs.should_publish == 'true'
+              if: steps.should_run.outputs.run == 'true'
               run: bun run build
 
-            - name: Configure Git
-              if: needs.setup.outputs.publish_type == 'release' || (needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true')
-              run: |
-                  git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                  git config --global user.name "github-actions[bot]"
-
-            # Release: bump version from tag, publish, commit back
-            - name: Bump version from tag
+            # ── Stable release ───────────────────────────────────────────────────────────
+            # The version is read from package.json (already bumped & tagged by `bun run release`
+            # and pushed to main). Nothing is committed back; npm provenance attests the published
+            # version against the pushed release commit.
+            - name: Resolve release version
+              id: release
               if: needs.setup.outputs.publish_type == 'release'
               run: |
-                  cd packages/${{ needs.setup.outputs.package_name }}
-                  npm version ${{ needs.setup.outputs.version }} --no-git-tag-version
-                  echo "Bumped to ${{ needs.setup.outputs.version }}"
-
-            - name: Validate package directory
-              if: needs.setup.outputs.publish_type == 'release'
-              run: |
-                  if [ ! -d "packages/${{ needs.setup.outputs.package_name }}" ]; then
-                    echo "::error::Package directory 'packages/${{ needs.setup.outputs.package_name }}' not found"
-                    exit 1
+                  PKG="${{ inputs.package }}"
+                  VERSION=$(node -p "require('./packages/$PKG/package.json').version")
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  if [[ "$VERSION" =~ - ]]; then
+                    echo "dist_tag=next" >> $GITHUB_OUTPUT
+                    echo "Publishing @vendure-community/$PKG@$VERSION (pre-release → next)"
+                  else
+                    echo "dist_tag=latest" >> $GITHUB_OUTPUT
+                    echo "Publishing @vendure-community/$PKG@$VERSION (stable → latest)"
                   fi
 
             - name: Publish to NPM (release)
               if: needs.setup.outputs.publish_type == 'release'
               run: |
-                  cd packages/${{ needs.setup.outputs.package_name }}
-                  npm publish --access public --provenance --tag ${{ needs.setup.outputs.dist_tag }}
+                  cd packages/${{ inputs.package }}
+                  ARGS="--access public --provenance --tag ${{ steps.release.outputs.dist_tag }}"
+                  if [ "${{ inputs.dry-run }}" == "true" ]; then
+                    ARGS="$ARGS --dry-run"
+                  fi
+                  npm publish $ARGS
 
-            - name: Commit version bump
-              if: needs.setup.outputs.publish_type == 'release'
-              run: |
-                  git add packages/${{ needs.setup.outputs.package_name }}/package.json
-                  git commit -m "chore: release @vendure-community/${{ needs.setup.outputs.package_name }}@${{ needs.setup.outputs.version }}"
-                  git push origin HEAD:main
-
-            # Nightly: bump to timestamped pre-release, publish with dev tag
+            # ── Nightly pre-release ──────────────────────────────────────────────────────
             - name: Get current date
               if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
               id: date
               run: echo "date=$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+
+            - name: Configure Git
+              if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'
+              run: |
+                  git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git config --global user.name "github-actions[bot]"
 
             - name: Bump pre-release versions
               if: needs.setup.outputs.publish_type == 'nightly' && steps.commit_check.outputs.should_publish == 'true'

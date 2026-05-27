@@ -53,7 +53,7 @@ These packages were extracted from the main [vendurehq/vendure](https://github.c
 
 ## Contributing
 
-We welcome contributions from the community. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, testing, and the release process.
+We welcome contributions from the community. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and testing, and [RELEASING.md](RELEASING.md) for the release process.
 
 ## License
 

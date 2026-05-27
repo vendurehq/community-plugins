@@ -20,6 +20,7 @@
         "test": "lerna run test",
         "e2e": "lerna run e2e",
         "lint": "lerna run lint",
+        "release": "tsx scripts/release/prepare-release.ts",
         "docs:generate": "tsx scripts/docs/generate-typescript-docs.ts",
         "docs:compile-manifest": "tsx docs/scripts/compile-manifest.ts",
         "docs:validate": "tsx docs/src/validate.ts"
@@ -40,6 +41,7 @@
         "gql.tada": "^1.8.10",
         "lerna": "^9.0.0",
         "rimraf": "^5.0.5",
+        "semver": "^7.7.2",
         "ts-node": "^10.9.0",
         "tsx": "^4.21.0",
         "typescript": "5.8.2",

@@ -1,99 +1,48 @@
 # Releasing
 
-This document describes how versioning, changelogs, and publishing work for the community plugins monorepo.
+Each package is versioned and published **independently**. Cut a release one package at a time:
+prepare locally, push, then trigger the publish workflow.
 
-## Versioning
-
-Each package is versioned **independently** using [Conventional Commits](https://www.conventionalcommits.org/).
-Version 1.0.0 of each package corresponds to the functionality extracted from Vendure core v3.5.6.
-
-### Commit message format
-
-Commit messages determine how versions are bumped and how changelogs are generated:
-
-```
-feat(elasticsearch-plugin): add new search filter      → minor bump (1.0.0 → 1.1.0)
-fix(mollie-plugin): handle null payment response        → patch bump (1.0.0 → 1.0.1)
-refactor(stripe-plugin): extract helper function        → patch bump
-feat(braintree-plugin)!: change API signature           → major bump (1.0.0 → 2.0.0)
-```
-
-**The scope must match the package directory name** (e.g. `elasticsearch-plugin`, `mollie-plugin`, `stripe-plugin`).
-This is how lerna attributes changes to the correct package changelog.
-
-Commits without a scope or with a non-package scope (e.g. `chore: update deps`) will appear
-in changelogs for all packages that had file changes in that commit.
-
-## Changelogs
-
-Per-package changelogs are maintained in each package's `CHANGELOG.md` file.
-These are **automatically generated** by `lerna version` using the conventional commits preset.
-
-### How it works
-
-1. `lerna version` detects which packages have changed since the last tagged release
-2. It reads conventional commit messages to determine the version bump type
-3. It generates/updates `CHANGELOG.md` in each changed package
-4. It creates a git commit and per-package git tags (e.g. `@vendure-community/mollie-plugin@1.1.0`)
-
-## Release workflow
-
-### Stable release
-
-Releases are created via GitHub Releases. The tag format determines which package to release:
+## 1. Prepare (local)
 
 ```bash
-# Release @vendure-community/elasticsearch-plugin v1.1.0
-gh release create elasticsearch-plugin/v1.1.0 \
-  --title "@vendure-community/elasticsearch-plugin v1.1.0" \
-  --generate-notes
-
-# Release @vendure-community/mollie-plugin v1.0.1
-gh release create mollie-plugin/v1.0.1 \
-  --title "@vendure-community/mollie-plugin v1.0.1" \
-  --generate-notes
+bun run release <package>            # e.g. bun run release mollie-plugin
 ```
 
-The CI workflow then:
-1. Parses the tag to determine the package name and version
-2. Bumps `package.json` to the tagged version
-3. Builds and publishes to npm with the `latest` tag
-4. Commits the version bump back to `main`
+Reads [conventional commits](https://www.conventionalcommits.org/) since the package's last
+`<package>/v*` tag, picks the bump (`feat!`/`BREAKING CHANGE` → major, `feat` → minor,
+`fix`/`perf`/`refactor` → patch), bumps `package.json`, writes `CHANGELOG.md`, and creates a commit
+plus an annotated `<package>/v<version>` tag. **Nothing is pushed** — review with `git show HEAD`.
 
-### Pre-release / nightly
+Flags: `--dry-run` (preview only), `--prerelease[=rc]` (e.g. `1.1.0-rc.0`), `--force` (release with
+no bumping commits), `--first-release` (allow when the package has no prior tag).
 
-Nightly pre-release builds run automatically at 03:00 UTC via cron. They:
+## 2. Push
 
-1. Check if there were any commits in the last 25 hours
-2. If so, bump all packages to a timestamped pre-release version (e.g. `1.0.1-dev.202603300300`)
-3. Publish to npm with the `dev` dist-tag
-
-To install a nightly build:
 ```bash
-npm install @vendure-community/elasticsearch-plugin@dev
+git push --follow-tags origin main
 ```
 
-You can also trigger a nightly publish manually:
-**Actions → Publish to NPM → Run workflow → publish_type: nightly**
+## 3. Publish
 
-This supports per-package publishing via the `package` dropdown.
+**Actions → Publish to NPM → Run workflow** → `publish_type: release`, `package: <package>`.
 
-## npm trusted publishing
+The workflow reads the version from `package.json`, builds, and publishes with provenance — a stable
+version goes to the `latest` dist-tag, a pre-release (hyphenated) version goes to `next`.
 
-This repo uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC) for
-authentication — no npm tokens are stored as secrets. The GitHub Actions workflow requests a
-short-lived credential from npm's OIDC provider.
+---
 
-### Setup (one-time per package)
+## Notes
 
-For each package on npmjs.com:
-1. Go to **Settings → Trusted Publishers**
-2. Add a GitHub Actions publisher with:
-   - Organization: `vendurehq`
-   - Repository: `community-plugins`
-   - Workflow: `publish.yml`
-
-### Provenance
-
-All published packages include [provenance attestation](https://docs.npmjs.com/generating-provenance-statements/),
-linking each published version to the exact workflow run and source commit that produced it.
+- **Baseline tags.** The tooling assumes every published version has a matching `<package>/v<version>`
+  tag, so the changelog only covers commits since the last release. If a package was published without
+  one, create it at its release commit first, then push it:
+  ```bash
+  git tag -a mollie-plugin/v1.0.0 <commit> -m "@vendure-community/mollie-plugin@1.0.0"
+  ```
+- **Nightly `dev` builds** publish automatically at 03:00 UTC (timestamped pre-releases on the `dev`
+  dist-tag). Install with `npm install @vendure-community/<package>@dev`.
+- **Trusted publishing.** Publishing uses [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/)
+  (OIDC) — no tokens stored. Each package needs a GitHub Actions trusted publisher on npmjs.com
+  (org `vendurehq`, repo `community-plugins`, workflow `publish.yml`). Published versions include
+  provenance attestation.
