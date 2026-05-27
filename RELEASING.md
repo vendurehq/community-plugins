@@ -17,6 +17,11 @@ plus an annotated `<package>/v<version>` tag. **Nothing is pushed** — review w
 Flags: `--dry-run` (preview only), `--prerelease[=rc]` (e.g. `1.1.0-rc.0`), `--force` (release with
 no bumping commits), `--first-release` (allow when the package has no prior tag).
 
+> **Hand-written changelogs.** For a release that needs richer notes than commit subjects (e.g. a
+> breaking change with a migration guide), pre-write the `## <version>` section in `CHANGELOG.md`,
+> leave `package.json` alone, then run the command. If the computed version matches a section that
+> already exists, the tool keeps your entry instead of generating a duplicate.
+
 ## 2. Push
 
 ```bash

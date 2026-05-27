@@ -200,6 +200,17 @@ function buildChangelogSection(
     return lines.join('\n').trimEnd() + '\n';
 }
 
+/** True if the changelog already has a `## <version>` heading, so we avoid generating a duplicate. */
+function changelogHasVersion(changelogPath: string, version: string): boolean {
+    if (!fs.existsSync(changelogPath)) {
+        return false;
+    }
+    const content = fs.readFileSync(changelogPath, 'utf-8');
+    const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match `## <version>` followed by a space (date form), `(`, or end of line — but not `## 1.0.10`.
+    return new RegExp(`^##\\s+${escaped}(\\s|\\(|$)`, 'm').test(content);
+}
+
 /** Inserts the new section after the changelog preamble, before the first existing `## ` entry. */
 function updateChangelog(changelogPath: string, section: string): void {
     const existing = fs.existsSync(changelogPath) ? fs.readFileSync(changelogPath, 'utf-8') : '';
@@ -292,13 +303,23 @@ function main(): void {
         newVersion = semver.inc(currentVersion, bump) as string;
     }
     const tag = `${packageName}/v${newVersion}`;
-    const section = buildChangelogSection(newVersion, packageName, commits, getPrBaseUrl(pkg.repository));
+    const changelogPath = path.join(pkgDir, 'CHANGELOG.md');
 
     console.log(`  Bump:            ${bump}${prerelease ? ` (prerelease: ${prerelease})` : ''}`);
     console.log(`  New version:     ${newVersion}`);
     console.log(`  Tag:             ${tag}\n`);
-    console.log('Changelog section:\n');
-    console.log(section);
+
+    // If a maintainer has already hand-written a section for this version (e.g. a detailed breaking
+    // change), keep it rather than generating — and prepending a duplicate — heading.
+    const section = changelogHasVersion(changelogPath, newVersion)
+        ? ''
+        : buildChangelogSection(newVersion, packageName, commits, getPrBaseUrl(pkg.repository));
+    if (section) {
+        console.log('Changelog section:\n');
+        console.log(section);
+    } else {
+        console.log(`Changelog: existing "## ${newVersion}" entry found — keeping it as-is.\n`);
+    }
 
     if (dryRun) {
         console.log('--dry-run: no files written, no commit, no tag.\n');
@@ -306,7 +327,9 @@ function main(): void {
     }
 
     updatePackageVersion(pkgPath, newVersion);
-    updateChangelog(path.join(pkgDir, 'CHANGELOG.md'), section);
+    if (section) {
+        updateChangelog(changelogPath, section);
+    }
 
     git(['add', `packages/${packageName}/package.json`, `packages/${packageName}/CHANGELOG.md`]);
     git(['commit', '-m', `chore(release): ${pkg.name}@${newVersion}`]);
