@@ -200,6 +200,22 @@ export interface StripePluginOptions {
      * to `true` to skip processing those payment intents.
      */
     skipPaymentIntentsWithoutExpectedMetadata?: boolean;
+
+    /**
+     * @description
+     * The Stripe API version to send with every request. Defaults to the version
+     * pinned by the SDK (currently `2026-05-27.dahlia`), matching the API the
+     * SDK's TypeScript types describe.
+     *
+     * Pass a specific version string (cast to `StripeLatestApiVersion`) to pin
+     * to a different version, or `null` to fall back to your Stripe account's
+     * default API version — this restores the pre-2.0.0 behaviour, but means
+     * the SDK types may not match what the API returns.
+     *
+     * @default undefined (SDK pinned version)
+     * @since 2.0.0
+     */
+    apiVersion?: StripeLatestApiVersion | null;
 }
 
 export interface RequestWithRawBody extends Request {

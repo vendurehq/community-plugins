@@ -139,7 +139,7 @@ export class StripeService {
         }
         const apiKey = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'apiKey');
         const webhookSecret = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'webhookSecret');
-        return new VendureStripeClient(apiKey, webhookSecret);
+        return new VendureStripeClient(apiKey, webhookSecret, this.options.apiVersion);
     }
 
     private findOrThrowArgValue(args: ConfigArg[], name: string): string {
