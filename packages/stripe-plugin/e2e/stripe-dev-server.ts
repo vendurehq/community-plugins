@@ -1,4 +1,4 @@
-import { AdminUiPlugin } from '@vendure/admin-ui-plugin';
+import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import {
     ChannelService,
     DefaultLogger,
@@ -9,85 +9,87 @@ import {
     OrderService,
     RequestContext,
 } from '@vendure/core';
-import { createTestEnvironment, registerInitializer, SqljsInitializer, testConfig } from '@vendure/testing';
+import { createTestEnvironment, registerInitializer, SqljsInitializer } from '@vendure/testing';
 import path from 'path';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
+import { testConfig } from '../../../e2e-common/test-config';
 import { StripePlugin } from '../src';
 import { stripePaymentMethodHandler } from '../src/stripe.handler';
 
-/* eslint-disable */
 import { StripeCheckoutTestPlugin } from './fixtures/stripe-checkout-test.plugin';
 import { StripeServiceExportTestPlugin } from './fixtures/stripe-service-export-test.plugin';
-import { CREATE_PAYMENT_METHOD } from './graphql/admin-queries';
-import {
-    CreatePaymentMethodMutation,
-    CreatePaymentMethodMutationVariables,
-} from './graphql/generated-admin-types';
-import { AddItemToOrderMutation, AddItemToOrderMutationVariables } from './graphql/generated-shop-types';
-import { ADD_ITEM_TO_ORDER } from './graphql/shop-queries';
-import {
-    CREATE_CUSTOM_STRIPE_PAYMENT_INTENT,
-    CREATE_STRIPE_PAYMENT_INTENT,
-    setShipping,
-} from './payment-helpers';
+import { createPaymentMethodDocument } from './graphql/admin-definitions';
+import { graphql as shopGraphql } from './graphql/graphql-shop';
+import { createStripePaymentIntentDocument } from './graphql/shared-definitions';
+import { addItemToOrderDocument } from './graphql/shop-definitions';
+import { setShipping } from './payment-helpers';
 
 export let clientSecret: string;
 
+const createCustomStripePaymentIntentDocument = shopGraphql(`
+    mutation CreateCustomStripePaymentIntent($orderCode: String!, $channelToken: String!) {
+        createCustomStripePaymentIntent(orderCode: $orderCode, channelToken: $channelToken)
+    }
+`);
+
 /**
- * The actual starting of the dev server
+ * Locally test the Stripe payment plugin against a real Stripe test account.
+ *
+ *   1. Put STRIPE_APIKEY, STRIPE_WEBHOOK_SECRET, STRIPE_PUBLISHABLE_KEY in a
+ *      `.env` next to this file (or in your shell).
+ *   2. Run `stripe listen --forward-to localhost:3050/payments/stripe` and
+ *      paste the resulting signing secret as STRIPE_WEBHOOK_SECRET.
+ *   3. `npm run dev-server` — then open http://localhost:3050/checkout.
  */
 (async () => {
     require('dotenv').config();
-
+    const testConfigInstance = testConfig();
     registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__data__')));
-    const config = mergeConfig(testConfig, {
+    const config = mergeConfig(testConfigInstance, {
         plugins: [
-            ...testConfig.plugins,
-            AdminUiPlugin.init({
-                route: 'admin',
-                port: 5001,
-            }),
+            ...testConfigInstance.plugins,
+            GraphiqlPlugin.init({ route: 'graphiql' }),
             StripePlugin.init({}),
             StripeCheckoutTestPlugin,
             StripeServiceExportTestPlugin,
         ],
         logger: new DefaultLogger({ level: LogLevel.Debug }),
+        apiOptions: {
+            ...testConfigInstance.apiOptions,
+            adminApiPlayground: true,
+            shopApiPlayground: true,
+        },
     });
-    const { server, shopClient, adminClient } = createTestEnvironment(config as any);
+    const { server, shopClient, adminClient } = createTestEnvironment(config);
     await server.init({
         initialData,
         productsCsvPath: path.join(__dirname, 'fixtures/e2e-products-minimal.csv'),
         customerCount: 1,
     });
-    // Create method
     await adminClient.asSuperAdmin();
-    await adminClient.query<CreatePaymentMethodMutation, CreatePaymentMethodMutationVariables>(
-        CREATE_PAYMENT_METHOD,
-        {
-            input: {
-                code: 'stripe-payment-method',
-                enabled: true,
-                translations: [
-                    {
-                        name: 'Stripe',
-                        description: 'This is a Stripe test payment method',
-                        languageCode: LanguageCode.en,
-                    },
-                ],
-                handler: {
-                    code: stripePaymentMethodHandler.code,
-                    arguments: [
-                        { name: 'apiKey', value: process.env.STRIPE_APIKEY! },
-                        { name: 'webhookSecret', value: process.env.STRIPE_WEBHOOK_SECRET! },
-                    ],
+    await adminClient.query(createPaymentMethodDocument, {
+        input: {
+            code: 'stripe-payment-method',
+            enabled: true,
+            translations: [
+                {
+                    name: 'Stripe',
+                    description: 'This is a Stripe test payment method',
+                    languageCode: LanguageCode.en,
                 },
+            ],
+            handler: {
+                code: stripePaymentMethodHandler.code,
+                arguments: [
+                    { name: 'apiKey', value: process.env.STRIPE_APIKEY! },
+                    { name: 'webhookSecret', value: process.env.STRIPE_WEBHOOK_SECRET! },
+                ],
             },
         },
-    );
-    // Prepare order for payment
+    });
     await shopClient.asUserWithCredentials('hayden.zieme12@hotmail.com', 'test');
-    await shopClient.query<AddItemToOrderMutation, AddItemToOrderMutationVariables>(ADD_ITEM_TO_ORDER, {
+    await shopClient.query(addItemToOrderDocument, {
         productVariantId: 'T_1',
         quantity: 1,
     });
@@ -102,12 +104,9 @@ export let clientSecret: string;
         listPrice: -20000,
     });
     await setShipping(shopClient);
-    const { createStripePaymentIntent } = await shopClient.query(CREATE_STRIPE_PAYMENT_INTENT);
-    clientSecret = createStripePaymentIntent;
-
-    // Showcasing the custom intent creation
-    const { createCustomStripePaymentIntent } = await shopClient.query(CREATE_CUSTOM_STRIPE_PAYMENT_INTENT);
-    Logger.debug('Result of createCustomStripePaymentIntent:', createCustomStripePaymentIntent);
+    const { createStripePaymentIntent } = await shopClient.query(createStripePaymentIntentDocument);
+    clientSecret = createStripePaymentIntent as string;
 
     Logger.info('http://localhost:3050/checkout', 'Stripe DevServer');
+    Logger.info('http://localhost:3050/graphiql', 'Stripe DevServer');
 })();
