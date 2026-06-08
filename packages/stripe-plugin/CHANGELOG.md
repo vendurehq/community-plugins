@@ -29,9 +29,21 @@ Major modernization release. Brings the plugin onto the current Stripe SDK and a
   `StripeLatestApiVersion`).
 - **HTTP transport switched from `node:http`/`node:https` to the platform `fetch`.** The plugin
   configures Stripe's `FetchHttpClient` so the SDK uses `globalThis.fetch` (Node 18+, which is the
-  minimum the SDK supports). Behaviour is functionally identical for normal use; if you relied on
-  custom `http.Agent` settings (proxies, keep-alive tuning) injected into the previous transport,
-  reach out — we'll add an explicit hook.
+  minimum the SDK supports). Behaviour is functionally identical for normal use; if you relied on a
+  custom `http.Agent` (proxies, keep-alive tuning), pass your own `Stripe.createNodeHttpClient(...)`
+  via the new `httpClient` plugin option:
+
+  ```ts
+  import Stripe from 'stripe';
+  import { HttpsProxyAgent } from 'https-proxy-agent';
+
+  StripePlugin.init({
+      // ...
+      httpClient: Stripe.createNodeHttpClient(
+          new HttpsProxyAgent(process.env.HTTPS_PROXY!),
+      ),
+  });
+  ```
 
 ### Improvements
 

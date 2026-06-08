@@ -27,3 +27,6 @@ export type StripeEvent = ReturnType<StripeInstance['webhooks']['constructEvent'
 export type StripeLatestApiVersion = NonNullable<
     NonNullable<ConstructorParameters<typeof Stripe>[1]>['apiVersion']
 >;
+export type StripeHttpClient = NonNullable<
+    NonNullable<ConstructorParameters<typeof Stripe>[1]>['httpClient']
+>;

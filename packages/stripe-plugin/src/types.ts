@@ -4,6 +4,7 @@ import type { Request } from 'express';
 
 import {
     StripeCustomerCreateParams,
+    StripeHttpClient,
     StripeLatestApiVersion,
     StripeMetadataParam,
     StripePaymentIntentCreateParams,
@@ -216,6 +217,32 @@ export interface StripePluginOptions {
      * @since 2.0.0
      */
     apiVersion?: StripeLatestApiVersion | null;
+
+    /**
+     * @description
+     * Override the HTTP client used to talk to Stripe. Defaults to Stripe's
+     * `FetchHttpClient` (using `globalThis.fetch`), which is what the plugin
+     * uses when this option is left unset. Override to inject a
+     * `NodeHttpClient` with a custom `http.Agent` if you need to route
+     * requests through a proxy, tune keep-alive behaviour, or otherwise
+     * customise the underlying TCP/TLS layer.
+     *
+     * @example
+     * ```ts
+     * import Stripe from 'stripe';
+     * import { HttpsProxyAgent } from 'https-proxy-agent';
+     *
+     * StripePlugin.init({
+     *     httpClient: Stripe.createNodeHttpClient(
+     *         new HttpsProxyAgent(process.env.HTTPS_PROXY!),
+     *     ),
+     * });
+     * ```
+     *
+     * @default undefined (Stripe.createFetchHttpClient())
+     * @since 2.0.0
+     */
+    httpClient?: StripeHttpClient;
 }
 
 export interface RequestWithRawBody extends Request {
