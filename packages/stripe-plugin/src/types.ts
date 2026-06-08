@@ -1,7 +1,14 @@
 import type { Injector, Order, RequestContext } from '@vendure/core';
 import '@vendure/core/dist/entity/custom-entity-fields';
 import type { Request } from 'express';
-import type Stripe from 'stripe';
+
+import {
+    StripeCustomerCreateParams,
+    StripeLatestApiVersion,
+    StripeMetadataParam,
+    StripePaymentIntentCreateParams,
+    StripeRequestOptions,
+} from './stripe-types';
 
 // Note: deep import is necessary here because CustomCustomerFields is also extended in the Braintree
 // plugin. Reference: https://github.com/microsoft/TypeScript/issues/46617
@@ -12,12 +19,12 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
 }
 
 type AdditionalPaymentIntentCreateParams = Partial<
-    Omit<Stripe.PaymentIntentCreateParams, 'amount' | 'currency' | 'customer'>
+    Omit<StripePaymentIntentCreateParams, 'amount' | 'currency' | 'customer'>
 >;
 
-type AdditionalRequestOptions = Partial<Omit<Stripe.RequestOptions, 'idempotencyKey'>>;
+type AdditionalRequestOptions = Partial<Omit<StripeRequestOptions, 'idempotencyKey'>>;
 
-type AdditionalCustomerCreateParams = Partial<Omit<Stripe.CustomerCreateParams, 'email'>>;
+type AdditionalCustomerCreateParams = Partial<Omit<StripeCustomerCreateParams, 'email'>>;
 
 /**
  * @description
@@ -71,7 +78,7 @@ export interface StripePluginOptions {
         injector: Injector,
         ctx: RequestContext,
         order: Order,
-    ) => Stripe.MetadataParam | Promise<Stripe.MetadataParam>;
+    ) => StripeMetadataParam | Promise<StripeMetadataParam>;
 
     /**
      * @description

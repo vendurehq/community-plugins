@@ -1,5 +1,6 @@
 import { CurrencyCode, LanguageCode, Order } from '@vendure/core';
-import Stripe from 'stripe';
+
+import { StripeMetadata } from './stripe-types';
 
 /**
  * @description
@@ -42,7 +43,7 @@ function currencyHasFractionPart(currencyCode: CurrencyCode): boolean {
  * @description
  * Ensures that the payment intent metadata object contains the expected properties, as defined by the plugin.
  */
-export function isExpectedVendureStripeEventMetadata(metadata: Stripe.Metadata): metadata is {
+export function isExpectedVendureStripeEventMetadata(metadata: StripeMetadata): metadata is {
     channelToken: string;
     orderCode: string;
     orderId: string;

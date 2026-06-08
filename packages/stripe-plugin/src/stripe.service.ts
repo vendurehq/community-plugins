@@ -12,11 +12,10 @@ import {
     TransactionalConnection,
     UserInputError,
 } from '@vendure/core';
-import Stripe from 'stripe';
-
 import { loggerCtx, STRIPE_PLUGIN_OPTIONS } from './constants';
 import { sanitizeMetadata } from './metadata-sanitize';
 import { VendureStripeClient } from './stripe-client';
+import { StripeEvent, StripeRefund } from './stripe-types';
 import { getAmountInStripeMinorUnits } from './stripe-utils';
 import { stripePaymentMethodHandler } from './stripe.handler';
 import { StripePluginOptions } from './types';
@@ -98,7 +97,7 @@ export class StripeService {
         order: Order,
         payload: Buffer,
         signature: string,
-    ): Promise<Stripe.Event> {
+    ): Promise<StripeEvent> {
         const stripe = await this.getStripeClient(ctx, order);
         return stripe.webhooks.constructEvent(payload, signature, stripe.webhookSecret);
     }
@@ -108,7 +107,7 @@ export class StripeService {
         order: Order,
         payment: Payment,
         amount: number,
-    ): Promise<Stripe.Response<Stripe.Refund>> {
+    ): Promise<StripeRefund> {
         const stripe = await this.getStripeClient(ctx, order);
         return stripe.refunds.create({
             payment_intent: payment.transactionId,

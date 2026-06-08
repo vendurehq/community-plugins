@@ -13,9 +13,9 @@ import {
 } from '@vendure/core';
 import { OrderStateTransitionError } from '@vendure/core/dist/common/error/generated-graphql-shop-errors';
 import type { Response } from 'express';
-import type Stripe from 'stripe';
 
 import { loggerCtx, STRIPE_PLUGIN_OPTIONS } from './constants';
+import { StripeEvent, StripePaymentIntent } from './stripe-types';
 import { isExpectedVendureStripeEventMetadata } from './stripe-utils';
 import { stripePaymentMethodHandler } from './stripe.handler';
 import { StripeService } from './stripe.service';
@@ -50,8 +50,8 @@ export class StripeController {
             return;
         }
 
-        const event = JSON.parse(request.body.toString()) as Stripe.Event;
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        const event = JSON.parse(request.body.toString()) as StripeEvent;
+        const paymentIntent = event.data.object as StripePaymentIntent;
 
         if (!paymentIntent) {
             Logger.error(noPaymentIntentErrorMessage, loggerCtx);
