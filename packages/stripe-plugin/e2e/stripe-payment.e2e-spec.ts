@@ -15,7 +15,7 @@ import {
 import nock from 'nock';
 import fetch from 'node-fetch';
 import path from 'path';
-import { Stripe } from 'stripe';
+import Stripe from 'stripe';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
@@ -397,7 +397,7 @@ describe('Stripe payments', () => {
         };
 
         const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
-        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
         const header = stripeWebhooks.generateTestHeaderString({
             payload: payloadString,
             secret: 'test-signing-secret',
@@ -452,7 +452,7 @@ describe('Stripe payments', () => {
         };
 
         const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
-        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
         const header = stripeWebhooks.generateTestHeaderString({
             payload: payloadString,
             secret: 'test-signing-secret',
