@@ -12,21 +12,27 @@ Major modernization release. Brings the plugin onto the current Stripe SDK and a
 
 - **`stripe` peer dependency: `13.x` → `^22.0.0`.** Bump `stripe` in your project to a matching
   version when upgrading. The wire-format and TypeScript types have been updated to match.
-- **Default Stripe API version is now pinned to the SDK's latest (`2026-05-27.dahlia`)** instead of
-  sending no version header (which previously fell back to the Stripe account default). This keeps
-  responses aligned with the SDK's typings. If your integration relied on the account default —
-  e.g. because you've held off upgrading API versions in the Stripe dashboard — set the new
-  `apiVersion` plugin option to `null` to restore the old behaviour:
+- **Default Stripe API version is now pinned to the SDK's latest (`2026-05-27.dahlia`).** Pre-2.0.0,
+  the plugin passed `apiVersion: null` and assumed the Stripe SDK would omit the `Stripe-Version`
+  header so the request would fall back to the Stripe account's default API version. In practice
+  the SDK has always coerced `null` to its own pinned default (see `props.apiVersion || DEFAULT_API_VERSION`
+  in `stripe.core.js`) — both on v13 and v22 — so the previous behaviour was already the SDK pinned
+  version (just an older one). With this release the responses will now come back shaped according
+  to dahlia rather than 2023-08-16.
+
+  If your code expects the older response shape, pin to the older version via the new `apiVersion`
+  option:
 
   ```ts
+  import type { StripeLatestApiVersion } from '@vendure-community/stripe-plugin';
+
   StripePlugin.init({
       // ...
-      apiVersion: null,
+      apiVersion: '2023-08-16' as StripeLatestApiVersion,
   });
   ```
 
-  To pin to a specific version other than the SDK default, pass it as a string (cast to
-  `StripeLatestApiVersion`).
+  There is no way on stripe-node v22 to instruct the SDK to omit the version header entirely.
 - **HTTP transport switched from `node:http`/`node:https` to the platform `fetch`.** The plugin
   configures Stripe's `FetchHttpClient` so the SDK uses `globalThis.fetch` (Node 18+, which is the
   minimum the SDK supports). Behaviour is functionally identical for normal use; if you relied on a

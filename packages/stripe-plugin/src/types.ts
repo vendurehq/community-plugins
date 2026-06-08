@@ -208,15 +208,15 @@ export interface StripePluginOptions {
      * pinned by the SDK (currently `2026-05-27.dahlia`), matching the API the
      * SDK's TypeScript types describe.
      *
-     * Pass a specific version string (cast to `StripeLatestApiVersion`) to pin
-     * to a different version, or `null` to fall back to your Stripe account's
-     * default API version — this restores the pre-2.0.0 behaviour, but means
-     * the SDK types may not match what the API returns.
+     * Override with an older version string (cast to `StripeLatestApiVersion`)
+     * if you can't yet upgrade your Stripe account to the SDK's pinned version
+     * and need the API to reply in the older shape. Note that the SDK's types
+     * will then diverge from the actual responses.
      *
      * @default undefined (SDK pinned version)
      * @since 2.0.0
      */
-    apiVersion?: StripeLatestApiVersion | null;
+    apiVersion?: StripeLatestApiVersion;
 
     /**
      * @description
