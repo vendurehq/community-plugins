@@ -28,6 +28,8 @@ import type {
     StripeRefundCreateParams,
     StripeRequestOptions,
 } from './stripe-types';
+import Stripe from 'stripe';
+
 
 type Extends<A, B> = [A] extends [B] ? true : false;
 type Assert<T extends true> = T;
@@ -141,7 +143,6 @@ type _Event = Assert<
 type _ApiVersion = Assert<Extends<StripeLatestApiVersion, string>>;
 
 // HttpClient must remain a value Stripe.createFetchHttpClient() produces.
-import Stripe from 'stripe';
 type _HttpClient = Assert<Extends<ReturnType<typeof Stripe.createFetchHttpClient>, StripeHttpClient>>;
 
 // Silence "is declared but never used" for the assertion locals — they exist

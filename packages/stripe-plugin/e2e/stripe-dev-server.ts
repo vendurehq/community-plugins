@@ -1,4 +1,3 @@
-import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import {
     ChannelService,
     DefaultLogger,
@@ -9,6 +8,7 @@ import {
     OrderService,
     RequestContext,
 } from '@vendure/core';
+import { GraphiqlPlugin } from '@vendure/graphiql-plugin';
 import { createTestEnvironment, registerInitializer, SqljsInitializer } from '@vendure/testing';
 import path from 'path';
 
@@ -42,7 +42,7 @@ const createCustomStripePaymentIntentDocument = shopGraphql(`
  *      paste the resulting signing secret as STRIPE_WEBHOOK_SECRET.
  *   3. `npm run dev-server` — then open http://localhost:3050/checkout.
  */
-(async () => {
+void (async () => {
     require('dotenv').config();
     const testConfigInstance = testConfig();
     registerInitializer('sqljs', new SqljsInitializer(path.join(__dirname, '__data__')));
@@ -82,8 +82,8 @@ const createCustomStripePaymentIntentDocument = shopGraphql(`
             handler: {
                 code: stripePaymentMethodHandler.code,
                 arguments: [
-                    { name: 'apiKey', value: process.env.STRIPE_APIKEY! },
-                    { name: 'webhookSecret', value: process.env.STRIPE_WEBHOOK_SECRET! },
+                    { name: 'apiKey', value: process.env.STRIPE_APIKEY ?? '' },
+                    { name: 'webhookSecret', value: process.env.STRIPE_WEBHOOK_SECRET ?? '' },
                 ],
             },
         },

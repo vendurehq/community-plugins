@@ -9,11 +9,6 @@ import {
     RequestContext,
 } from '@vendure/core';
 import {
-    createProductDocument,
-    createProductVariantsDocument,
-    testCreateStockLocationDocument,
-} from './graphql/admin-definitions';
-import {
     createErrorResultGuard,
     createTestEnvironment,
     E2E_DEFAULT_CHANNEL_TOKEN,
@@ -32,6 +27,11 @@ import { VendureStripeClient } from '../src/stripe-client';
 import { stripePaymentMethodHandler } from '../src/stripe.handler';
 import { StripeService } from '../src/stripe.service';
 
+import {
+    createProductDocument,
+    createProductVariantsDocument,
+    testCreateStockLocationDocument,
+} from './graphql/admin-definitions';
 import {
     createChannelDocument,
     createPaymentMethodDocument,
@@ -629,7 +629,7 @@ describe('Stripe payments', () => {
                 languageCode: LanguageCode.en,
             });
             const orders = await orderService.findAll(ctx, { take: 1 });
-            const realOrder = orders.items[0]!;
+            const realOrder = orders.items[0];
             const syntheticPayment = { transactionId: paymentIntentId } as Payment;
             return stripeService.createRefund(ctx, realOrder, syntheticPayment, refundAmount, reason);
         }
