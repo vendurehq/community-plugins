@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
-import { EntityHydrator, mergeConfig } from '@vendure/core';
+import { Customer, EntityHydrator, mergeConfig, TransactionalConnection } from '@vendure/core';
 import {
     createProductDocument,
     createProductVariantsDocument,
@@ -326,6 +326,50 @@ describe('Stripe payments', () => {
             description: `Description for ${activeOrder!.customer!.emailAddress}`,
             phone: '12345',
         });
+    });
+
+    // https://github.com/vendurehq/community-plugins/issues/25
+    it('should pass requestOptions to customer list and create calls', async () => {
+        StripePlugin.options.requestOptions = () => ({
+            stripeAccount: 'acct_connected',
+        });
+
+        // Reset the cached Stripe customer id so the lookup/create path runs again.
+        const connection = server.app.get(TransactionalConnection);
+        const customerRepo = connection.rawConnection.getRepository(Customer);
+        const dbCustomer = await customerRepo.findOneByOrFail({
+            emailAddress: customers[1].emailAddress,
+        });
+        dbCustomer.customFields.stripeCustomerId = '';
+        await customerRepo.save(dbCustomer, { reload: false });
+
+        await shopClient.asUserWithCredentials(customers[1].emailAddress, 'test');
+
+        // Both customer calls must carry the Stripe-Account header, otherwise the
+        // customer is created on the platform account while the payment intent
+        // targets the connected account ("No such customer" on intent creation).
+        const stripeAccountHeaders: string[] = [];
+        nock('https://api.stripe.com/', {
+            reqheaders: {
+                'Stripe-Account': headerValue => {
+                    stripeAccountHeaders.push(headerValue);
+                    return true;
+                },
+            },
+        })
+            .get(/\/v1\/customers.*/)
+            .reply(200, { data: [] })
+            .post('/v1/customers')
+            .reply(201, { id: 'connected-account-customer-id' });
+        nock('https://api.stripe.com/').post('/v1/payment_intents').reply(200, {
+            client_secret: 'test-client-secret',
+        });
+
+        const { createStripePaymentIntent } = await shopClient.query(createStripePaymentIntentDocument);
+        expect(stripeAccountHeaders).toEqual(['acct_connected', 'acct_connected']);
+        expect(createStripePaymentIntent).toEqual('test-client-secret');
+        StripePlugin.options.requestOptions = undefined;
+        StripePlugin.options.customerCreateParams = undefined;
     });
 
     // https://github.com/vendurehq/vendure/issues/2450

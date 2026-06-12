@@ -179,7 +179,25 @@ export class StripeService {
 
         let stripeCustomerId;
 
-        const stripeCustomers = await stripe.customers.list({ email: customer.emailAddress });
+        // Resolve requestOptions the same way as createPaymentIntent() does, so that
+        // customer lookup/creation runs against the same Stripe account as the
+        // PaymentIntent (e.g. a connected account when `stripeAccount` is set).
+        // Note: the Stripe SDK rejects an empty options hash, so it is only passed
+        // along when it actually contains options.
+        const additionalOptions = await this.options.requestOptions?.(
+            new Injector(this.moduleRef),
+            ctx,
+            order,
+        );
+        const customerRequestOptions =
+            additionalOptions && Object.keys(additionalOptions).length > 0
+                ? additionalOptions
+                : undefined;
+
+        const customerListParams = { email: customer.emailAddress };
+        const stripeCustomers = customerRequestOptions
+            ? await stripe.customers.list(customerListParams, customerRequestOptions)
+            : await stripe.customers.list(customerListParams);
         if (stripeCustomers.data.length > 0) {
             stripeCustomerId = stripeCustomers.data[0].id;
         } else {
@@ -188,14 +206,17 @@ export class StripeService {
                 ctx,
                 order,
             );
-            const newStripeCustomer = await stripe.customers.create({
+            const customerCreateParams = {
                 email: customer.emailAddress,
                 name: `${customer.firstName} ${customer.lastName}`,
                 ...(additionalParams ?? {}),
                 ...(additionalParams?.metadata
                     ? { metadata: sanitizeMetadata(additionalParams.metadata) }
                     : {}),
-            });
+            };
+            const newStripeCustomer = customerRequestOptions
+                ? await stripe.customers.create(customerCreateParams, customerRequestOptions)
+                : await stripe.customers.create(customerCreateParams);
 
             stripeCustomerId = newStripeCustomer.id;
 
