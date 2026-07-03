@@ -172,6 +172,48 @@ The `clientOptions` property that previously lived at the top level of
 `ElasticsearchOptions` now lives on the adapter factory options and is passed
 through to the underlying client constructor verbatim.
 
+## Multi-currency indexing
+
+Channels can expose more than one currency via `availableCurrencyCodes`. Out of
+the box the plugin indexes each variant **once** per channel/language, using the
+channel's `defaultCurrencyCode`. This matches the pre-multi-currency behaviour
+and keeps the index small.
+
+To index a variant **per currency** so that `currencyCode`-scoped search queries
+return prices in the requested currency, enable `indexCurrencyCode`:
+
+```ts
+ElasticsearchPlugin.init({
+  adapter: () => createElasticsearchAdapter({ host, port }),
+  indexCurrencyCode: true,
+});
+```
+
+When the option is on:
+
+- The document `_id` shape changes from `{channelId}_{entityId}_{languageCode}`
+  to `{channelId}_{entityId}_{languageCode}_{currencyCode}`. You must run a full
+  reindex after toggling the option — old 3-part documents are not
+  automatically removed.
+- Each variant is indexed once per `(channel, languageCode, currencyCode)`
+  triple. The `ProductVariantPriceSelectionStrategy` is consulted for every
+  currency to pull the correct price row.
+- Variants that have no explicit `ProductVariantPrice` row for a given
+  `(channel, currency)` pair are **skipped** for that currency rather than
+  indexed with a `price: 0` placeholder. This keeps `sort: { price: ASC }`
+  results clean but means that unpriced variants are invisible to currency-
+  scoped searches until you add an explicit price.
+- If you ship a custom `ProductVariantPriceSelectionStrategy`, ensure it
+  honours `ctx.currencyCode`. The plugin emits a startup warning when a
+  non-default strategy is paired with `indexCurrencyCode: true`.
+- During a rolling deploy in which both old and new workers coexist, old
+  workers will keep writing 3-part `_id`s while new workers write 4-part
+  `_id`s. Run a full reindex once the deploy is complete to normalise the
+  state.
+
+`indexCurrencyCode` defaults to `false`, so existing single-currency
+deployments need no changes when upgrading.
+
 ## Search API Extensions
 
 This plugin extends the default search query of the Shop API, allowing richer querying of your product data.

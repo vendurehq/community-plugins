@@ -1,6 +1,7 @@
 import type { SearchClientAdapter } from '../adapter';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { CurrencyCode } from '@vendure/common/lib/generated-types';
 import { unique } from '@vendure/common/lib/unique';
 import {
     Asset,
@@ -16,7 +17,6 @@ import {
     InternalServerError,
     LanguageCode,
     Logger,
-    MutableRequestContext,
     Product,
     ProductPriceApplicator,
     ProductVariant,
@@ -46,7 +46,14 @@ import {
     VariantIndexItem,
 } from '../types';
 
+import { CurrencyAwareMutableRequestContext } from './currency-aware-request-context';
+import { buildVariantDocId, resolveChannelIndexCurrencies } from './indexing-id-helpers';
 import { createIndices, getIndexNameByAlias } from './indexing-utils';
+import {
+    shouldSkipVariantForCurrency,
+    snapshotProductPriceAggregates,
+    snapshotVariantPrice,
+} from './variant-price-utils';
 
 export const defaultProductRelations: Array<EntityRelationPaths<Product>> = [
     'featuredAsset',
@@ -64,6 +71,7 @@ export const defaultVariantRelations: Array<EntityRelationPaths<ProductVariant>>
     'taxCategory',
     'channels',
     'channels.defaultTaxZone',
+    'productVariantPrices',
 ];
 
 export interface ReindexMessageResponse {
@@ -120,7 +128,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
      * Updates the search index only for the affected product.
      */
     async updateProduct({ ctx: rawContext, productId }: UpdateProductMessageData): Promise<boolean> {
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, [productId]);
         return true;
     }
@@ -141,7 +149,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         productId,
         channelId,
     }: ProductChannelMessageData): Promise<boolean> {
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, [productId]);
         return true;
     }
@@ -154,7 +162,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         productId,
         channelId,
     }: ProductChannelMessageData): Promise<boolean> {
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, [productId]);
         return true;
     }
@@ -165,7 +173,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         channelId,
     }: VariantChannelMessageData): Promise<boolean> {
         const productIds = await this.getProductIdsByVariantIds([productVariantId]);
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, productIds);
         return true;
     }
@@ -176,7 +184,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         channelId,
     }: VariantChannelMessageData): Promise<boolean> {
         const productIds = await this.getProductIdsByVariantIds([productVariantId]);
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         await this.updateProductsInternal(ctx, productIds);
         return true;
     }
@@ -185,7 +193,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
      * Updates the search index only for the affected entities.
      */
     async updateVariants({ ctx: rawContext, variantIds }: UpdateVariantMessageData): Promise<boolean> {
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         return this.asyncQueue.push(async () => {
             const productIds = await this.getProductIdsByVariantIds(variantIds);
             await this.updateProductsInternal(ctx, productIds);
@@ -194,7 +202,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
     }
 
     async deleteVariants({ ctx: rawContext, variantIds }: UpdateVariantMessageData): Promise<boolean> {
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         const productIds = await this.getProductIdsByVariantIds(variantIds);
         for (const productId of productIds) {
             await this.updateProductsInternal(ctx, [productId]);
@@ -206,7 +214,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         ctx: rawContext,
         ids,
     }: UpdateVariantsByIdMessageData): Observable<ReindexMessageResponse> {
-        const ctx = MutableRequestContext.deserialize(rawContext);
+        const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
         return asyncObservable(async observer => {
             return this.asyncQueue.push(async () => {
                 const timeStart = Date.now();
@@ -237,7 +245,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         return asyncObservable(async observer => {
             return this.asyncQueue.push(async () => {
                 const timeStart = Date.now();
-                const ctx = MutableRequestContext.deserialize(rawContext);
+                const ctx = CurrencyAwareMutableRequestContext.deserialize(rawContext);
 
                 const reindexTempName = new Date().getTime();
                 const variantIndexName = `${this.options.indexPrefix}${VARIANT_INDEX_NAME}`;
@@ -421,7 +429,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         return failures1.length === 0 && failures2.length === 0;
     }
 
-    private async updateProductsInternal(ctx: MutableRequestContext, productIds: ID[]) {
+    private async updateProductsInternal(ctx: CurrencyAwareMutableRequestContext, productIds: ID[]) {
         await this.updateProductsOperations(ctx, productIds);
     }
 
@@ -501,7 +509,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
     }
 
     private async updateProductsOperationsOnly(
-        ctx: MutableRequestContext,
+        ctx: CurrencyAwareMutableRequestContext,
         productId: ID,
         index = VARIANT_INDEX_NAME,
     ): Promise<void> {
@@ -552,44 +560,107 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
 
         const uniqueLanguageVariants = unique(languageVariants);
         const originalChannel = ctx.channel;
-        for (const channel of product.channels) {
-            ctx.setChannel(channel);
-            const variantsInChannel = updatedProductVariants.filter(v =>
-                v.channels.map(c => c.id).includes(ctx.channelId),
-            );
-            for (const variant of variantsInChannel)
-                await this.productPriceApplicator.applyChannelPriceAndTax(variant, ctx);
+        // The same `ctx` instance is reused across products in `updateProductsOperations`,
+        // so any exception inside the per-channel/per-currency loop must NOT leak a
+        // stale `mutatedCurrencyCode` or `channel` onto the shared context. `finally`
+        // guarantees the resets run even on the throwing path.
+        try {
+            for (const channel of product.channels) {
+                ctx.setChannel(channel);
+                const variantsInChannel = updatedProductVariants.filter(v =>
+                    v.channels.map(c => c.id).includes(ctx.channelId),
+                );
 
-            for (const languageCode of uniqueLanguageVariants) {
-                if (variantsInChannel.length) {
-                    for (const variant of variantsInChannel) {
-                        operations.push(
-                            {
-                                index: VARIANT_INDEX_NAME,
-                                operation: {
-                                    update: {
-                                        _id: ElasticsearchIndexerController.getId(
-                                            variant.id,
-                                            ctx.channelId,
-                                            languageCode,
-                                        ),
+                const currencyCodes = this.getChannelIndexCurrencies(channel);
+
+                for (const currencyCode of currencyCodes) {
+                    ctx.setCurrencyCode(currencyCode);
+
+                    for (const variant of variantsInChannel)
+                        await this.productPriceApplicator.applyChannelPriceAndTax(variant, ctx);
+
+                    for (const languageCode of uniqueLanguageVariants) {
+                        if (variantsInChannel.length) {
+                            for (const variant of variantsInChannel) {
+                                // Skip variants with no explicit ProductVariantPrice in the
+                                // current (channel, currency) pair: without this guard,
+                                // applyChannelPriceAndTax falls back to a zero `listPrice` and we
+                                // would index a phantom `price: 0` document that pollutes
+                                // `sort: { price: ASC }` and surfaces unpriced variants in
+                                // currency-filtered searches.
+                                if (shouldSkipVariantForCurrency(variant, ctx.channelId, currencyCode)) {
+                                    Logger.debug(
+                                        `Skipping variant ${variant.id} for ${currencyCode}: no ProductVariantPrice in this channel`,
+                                        loggerCtx,
+                                    );
+                                    continue;
+                                }
+                                operations.push(
+                                    {
+                                        index: VARIANT_INDEX_NAME,
+                                        operation: {
+                                            update: {
+                                                _id: this.getId(
+                                                    variant.id,
+                                                    ctx.channelId,
+                                                    languageCode,
+                                                    currencyCode,
+                                                ),
+                                            },
+                                        },
+                                    },
+                                    {
+                                        index: VARIANT_INDEX_NAME,
+                                        operation: {
+                                            doc: await this.createVariantIndexItem(
+                                                variant,
+                                                variantsInChannel,
+                                                ctx,
+                                                languageCode,
+                                            ),
+                                            doc_as_upsert: true,
+                                        },
+                                    },
+                                );
+
+                                if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
+                                    // Because we can have a huge amount of variant for 1 product, we also chunk update operations
+                                    await this.executeBulkOperationsByChunks(
+                                        this.options.reindexBulkOperationSizeLimit,
+                                        operations,
+                                        index,
+                                    );
+                                    operations = [];
+                                }
+                            }
+                        } else {
+                            operations.push(
+                                {
+                                    index: VARIANT_INDEX_NAME,
+                                    operation: {
+                                        update: {
+                                            _id: this.getId(
+                                                -product.id,
+                                                ctx.channelId,
+                                                languageCode,
+                                                currencyCode,
+                                            ),
+                                        },
                                     },
                                 },
-                            },
-                            {
-                                index: VARIANT_INDEX_NAME,
-                                operation: {
-                                    doc: await this.createVariantIndexItem(
-                                        variant,
-                                        variantsInChannel,
-                                        ctx,
-                                        languageCode,
-                                    ),
-                                    doc_as_upsert: true,
+                                {
+                                    index: VARIANT_INDEX_NAME,
+                                    operation: {
+                                        doc: await this.createSyntheticProductIndexItem(
+                                            product,
+                                            ctx,
+                                            languageCode,
+                                        ),
+                                        doc_as_upsert: true,
+                                    },
                                 },
-                            },
-                        );
-
+                            );
+                        }
                         if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
                             // Because we can have a huge amount of variant for 1 product, we also chunk update operations
                             await this.executeBulkOperationsByChunks(
@@ -600,41 +671,12 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                             operations = [];
                         }
                     }
-                } else {
-                    operations.push(
-                        {
-                            index: VARIANT_INDEX_NAME,
-                            operation: {
-                                update: {
-                                    _id: ElasticsearchIndexerController.getId(
-                                        -product.id,
-                                        ctx.channelId,
-                                        languageCode,
-                                    ),
-                                },
-                            },
-                        },
-                        {
-                            index: VARIANT_INDEX_NAME,
-                            operation: {
-                                doc: await this.createSyntheticProductIndexItem(product, ctx, languageCode),
-                                doc_as_upsert: true,
-                            },
-                        },
-                    );
-                }
-                if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                    // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                    await this.executeBulkOperationsByChunks(
-                        this.options.reindexBulkOperationSizeLimit,
-                        operations,
-                        index,
-                    );
-                    operations = [];
                 }
             }
+        } finally {
+            ctx.setCurrencyCode(undefined);
+            ctx.setChannel(originalChannel);
         }
-        ctx.setChannel(originalChannel);
 
         // Because we can have a huge amount of variant for 1 product, we also chunk update operations
         await this.executeBulkOperationsByChunks(
@@ -646,7 +688,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         return;
     }
 
-    private async updateProductsOperations(ctx: MutableRequestContext, productIds: ID[]): Promise<void> {
+    private async updateProductsOperations(ctx: CurrencyAwareMutableRequestContext, productIds: ID[]): Promise<void> {
         Logger.debug(`Updating ${productIds.length} Products`, loggerCtx);
         for (const productId of productIds) {
             await this.deleteProductOperations(ctx, productId);
@@ -704,22 +746,15 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
             this.connection.rawConnection
                 .getRepository(Channel)
                 .createQueryBuilder('channel')
-                .select('channel.id')
+                .select(['channel.id', 'channel.defaultCurrencyCode', 'channel.availableCurrencyCodes'])
                 .getMany(),
         );
 
         const product = await this.connection
             .getRepository(ctx, Product)
             .createQueryBuilder('product')
-            .select([
-                'product.id',
-                'productVariant.id',
-                'productTranslations.languageCode',
-                'productVariantTranslations.languageCode',
-            ])
-            .leftJoin('product.translations', 'productTranslations')
+            .select(['product.id', 'productVariant.id'])
             .leftJoin('product.variants', 'productVariant')
-            .leftJoin('productVariant.translations', 'productVariantTranslations')
             .leftJoin('product.channels', 'channel')
             .where('product.id = :productId', { productId })
             .andWhere('channel.id = :channelId', { channelId: ctx.channelId })
@@ -728,94 +763,115 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         if (!product) return;
 
         Logger.debug(`Deleting 1 Product (id: ${productId})`, loggerCtx);
-        let operations: BulkVariantOperation[] = [];
-        const languageVariants: LanguageCode[] = [];
-        languageVariants.push(...product.translations.map(t => t.languageCode));
-        for (const variant of product.variants)
-            languageVariants.push(...variant.translations.map(t => t.languageCode));
 
-        const uniqueLanguageVariants = unique(languageVariants);
-
-        for (const { id: channelId } of channels) {
-            for (const languageCode of uniqueLanguageVariants) {
-                operations.push({
-                    index: VARIANT_INDEX_NAME,
-                    operation: {
-                        delete: {
-                            _id: ElasticsearchIndexerController.getId(-product.id, channelId, languageCode),
-                        },
-                    },
-                });
-                if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                    // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                    await this.executeBulkOperationsByChunks(
-                        this.options.reindexBulkOperationSizeLimit,
-                        operations,
-                        index,
-                    );
-                    operations = [];
-                }
-            }
+        // Synthetic-product docs (created via createSyntheticProductIndexItem for
+        // products with no variants) are stored with `productVariantId: 0` and the
+        // owning `productId`. A single delete_by_query per channel removes every
+        // synthetic doc — across all currencies and languages — without enumerating
+        // the channel's *current* availableCurrencyCodes. That matters because the
+        // channel's currency set may have shrunk since indexing, which would
+        // otherwise leave orphaned docs for the dropped currencies.
+        for (const channel of channels) {
+            await this.deleteSyntheticDocsForProductInChannel(channel.id, product.id, index);
         }
-        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-        await this.executeBulkOperationsByChunks(
-            this.options.reindexBulkOperationSizeLimit,
-            operations,
-            index,
-        );
 
-        await this.deleteVariantsInternalOperations(
-            product.variants,
-            channels.map(c => c.id),
-            uniqueLanguageVariants,
-            index,
-        );
+        await this.deleteVariantsInternalOperations(product.variants, channels, index);
 
         return;
     }
 
     private async deleteVariantsInternalOperations(
         variants: ProductVariant[],
-        channelIds: ID[],
-        languageVariants: LanguageCode[],
+        channels: Channel[],
         index = VARIANT_INDEX_NAME,
     ): Promise<void> {
+        if (!variants.length) return;
         Logger.debug(`Deleting ${variants.length} ProductVariants`, loggerCtx);
-        let operations: BulkVariantOperation[] = [];
-        for (const variant of variants) {
-            for (const channelId of channelIds) {
-                for (const languageCode of languageVariants) {
-                    operations.push({
-                        index: VARIANT_INDEX_NAME,
-                        operation: {
-                            delete: {
-                                _id: ElasticsearchIndexerController.getId(
-                                    variant.id,
-                                    channelId,
-                                    languageCode,
-                                ),
-                            },
-                        },
-                    });
-                    if (operations.length >= this.options.reindexBulkOperationSizeLimit) {
-                        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-                        await this.executeBulkOperationsByChunks(
-                            this.options.reindexBulkOperationSizeLimit,
-                            operations,
-                            index,
-                        );
-                        operations = [];
-                    }
-                }
+        // Because we can have a huge amount of variants for 1 product, we chunk
+        // the variant id list to keep each delete_by_query body bounded — the
+        // chunk size mirrors the same threshold used for indexing bulk ops.
+        const chunkSize = this.options.reindexBulkOperationSizeLimit;
+        const variantIds = variants.map(v => v.id);
+        for (const channel of channels) {
+            for (let i = 0; i < variantIds.length; i += chunkSize) {
+                const chunk = variantIds.slice(i, i + chunkSize);
+                await this.deleteVariantDocsInChannel(channel.id, chunk, index);
             }
         }
-        // Because we can have a huge amount of variant for 1 product, we also chunk update operations
-        await this.executeBulkOperationsByChunks(
-            this.options.reindexBulkOperationSizeLimit,
-            operations,
-            index,
-        );
         return;
+    }
+
+    /**
+     * Removes every (currency × language) doc keyed under the given variants in
+     * the supplied channel via a single `delete_by_query`. Replaces the previous
+     * per-channel/per-currency/per-language bulk-delete fan-out, which would miss
+     * docs whose currency had since been removed from the channel's
+     * `availableCurrencyCodes`.
+     */
+    private async deleteVariantDocsInChannel(
+        channelId: ID,
+        variantIds: ID[],
+        index: string,
+    ): Promise<void> {
+        if (!variantIds.length) return;
+        const fullIndexName = this.options.indexPrefix + index;
+        try {
+            await this.adapter.deleteByQuery({
+                index: fullIndexName,
+                refresh: true,
+                body: {
+                    query: {
+                        bool: {
+                            filter: [
+                                { term: { channelId } },
+                                { terms: { productVariantId: variantIds } },
+                            ],
+                        },
+                    },
+                },
+            });
+        } catch (e: any) {
+            Logger.error(
+                `Error deleting variants [${variantIds.join(', ')}] from channel ${channelId} on index ${fullIndexName}: ${JSON.stringify(e?.body?.error ?? e)}`,
+                loggerCtx,
+            );
+        }
+    }
+
+    /**
+     * Removes the synthetic doc(s) for a product in a channel — the docs created
+     * for products with no variants (see `createSyntheticProductIndexItem`). They
+     * are identifiable by `productVariantId: 0` alongside the owning `productId`.
+     */
+    private async deleteSyntheticDocsForProductInChannel(
+        channelId: ID,
+        productId: ID,
+        index: string,
+    ): Promise<void> {
+        const fullIndexName = this.options.indexPrefix + index;
+        try {
+            await this.adapter.deleteByQuery({
+                index: fullIndexName,
+                refresh: true,
+                body: {
+                    query: {
+                        bool: {
+                            filter: [
+                                { term: { channelId } },
+                                { term: { productId } },
+                                // Synthetic items are the only docs with productVariantId: 0.
+                                { term: { productVariantId: 0 } },
+                            ],
+                        },
+                    },
+                },
+            });
+        } catch (e: any) {
+            Logger.error(
+                `Error deleting synthetic docs for product ${productId} from channel ${channelId} on index ${fullIndexName}: ${JSON.stringify(e?.body?.error ?? e)}`,
+                loggerCtx,
+            );
+        }
     }
 
     private async getProductIdsByVariantIds(variantIds: ID[]): Promise<ID[]> {
@@ -888,6 +944,14 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         languageCode: LanguageCode,
     ): Promise<VariantIndexItem> {
         try {
+            // Pin the variant + product price aggregates upfront. `applyChannelPriceAndTax`
+            // mutates the same variant instances in place across (channel, currency)
+            // iterations in `updateProductsOperationsOnly`; snapshotting before any
+            // awaitable work ensures the produced index item reflects the state at
+            // entry, even if a future refactor defers bulk-op composition.
+            const variantSnapshot = snapshotVariantPrice(v);
+            const productPriceSnapshot = snapshotProductPriceAggregates(variants);
+
             const productAsset = v.product.featuredAsset;
             const variantAsset = v.featuredAsset;
             const productTranslation = this.getTranslation(v.product, languageCode);
@@ -901,8 +965,6 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 ],
                 [] as Array<Translation<Collection>>,
             );
-            const prices = variants.map(variant => variant.price);
-            const pricesWithTax = variants.map(variant => variant.priceWithTax);
 
             const item: VariantIndexItem = {
                 channelId: ctx.channelId,
@@ -921,9 +983,9 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 productVariantPreviewFocalPoint: variantAsset
                     ? variantAsset.focalPoint || undefined
                     : undefined,
-                price: v.price,
-                priceWithTax: v.priceWithTax,
-                currencyCode: v.currencyCode,
+                price: variantSnapshot.price,
+                priceWithTax: variantSnapshot.priceWithTax,
+                currencyCode: variantSnapshot.currencyCode,
                 description: productTranslation.description,
                 facetIds: this.getFacetIds([v]),
                 channelIds: v.channels.map(c => c.id),
@@ -932,10 +994,10 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 collectionSlugs: collectionTranslations.map(c => c.slug),
                 enabled: v.enabled && v.product.enabled,
                 productEnabled: variants.some(variant => variant.enabled) && v.product.enabled,
-                productPriceMin: Math.min(...prices),
-                productPriceMax: Math.max(...prices),
-                productPriceWithTaxMin: Math.min(...pricesWithTax),
-                productPriceWithTaxMax: Math.max(...pricesWithTax),
+                productPriceMin: Math.min(...productPriceSnapshot.prices),
+                productPriceMax: Math.max(...productPriceSnapshot.prices),
+                productPriceWithTaxMin: Math.min(...productPriceSnapshot.pricesWithTax),
+                productPriceWithTaxMax: Math.max(...productPriceSnapshot.pricesWithTax),
                 productFacetIds: this.getFacetIds(variants),
                 productFacetValueIds: this.getFacetValueIds(variants),
                 productCollectionIds: unique(
@@ -1070,7 +1132,22 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         return unique([...variantFacetValueIds, ...productFacetValueIds]);
     }
 
-    private static getId(entityId: ID, channelId: ID, languageCode: LanguageCode): string {
-        return `${channelId.toString()}_${entityId.toString()}_${languageCode}`;
+    private getId(
+        entityId: ID,
+        channelId: ID,
+        languageCode: LanguageCode,
+        currencyCode: CurrencyCode,
+    ): string {
+        return buildVariantDocId(
+            this.options.indexCurrencyCode,
+            entityId,
+            channelId,
+            languageCode,
+            currencyCode,
+        );
+    }
+
+    private getChannelIndexCurrencies(channel: Channel): CurrencyCode[] {
+        return resolveChannelIndexCurrencies(this.options.indexCurrencyCode, channel);
     }
 }

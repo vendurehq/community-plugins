@@ -298,6 +298,23 @@ export interface ElasticsearchOptions {
     bufferUpdates?: boolean;
     /**
      * @description
+     * If set to `true`, the search index will contain separate documents per channel currency,
+     * keyed on `{channelId}_{entityId}_{languageCode}_{currencyCode}`. Each variant is indexed
+     * once per `(channel, languageCode, currencyCode)` triple using the configured
+     * `ProductVariantPriceSelectionStrategy` to resolve the price for the given currency.
+     *
+     * When `false` (the default), the index keeps the 3-part `_id` shape
+     * `{channelId}_{entityId}_{languageCode}` and only the channel's `defaultCurrencyCode`
+     * is indexed — matching the behaviour prior to multi-currency support. This preserves
+     * compatibility for single-currency deployments and avoids a forced reindex on upgrade.
+     *
+     * Enabling this option after upgrade requires a full reindex.
+     *
+     * @default false
+     */
+    indexCurrencyCode?: boolean;
+    /**
+     * @description
      * Additional product relations that will be fetched from DB while reindexing. This can be used
      * in combination with `customProductMappings` to ensure that the required relations are joined
      * before the `product` object is passed to the `valueFn`.
@@ -756,6 +773,7 @@ export const defaultOptions: ElasticsearchRuntimeOptions = {
     customProductMappings: {},
     customProductVariantMappings: {},
     bufferUpdates: false,
+    indexCurrencyCode: false,
     hydrateProductRelations: [],
     hydrateProductVariantRelations: [],
     extendSearchInputType: {},
