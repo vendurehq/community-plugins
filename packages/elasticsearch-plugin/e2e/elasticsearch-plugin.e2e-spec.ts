@@ -45,12 +45,14 @@ import {
 } from './e2e-helpers';
 import { graphql, ResultOf } from './graphql/graphql-admin';
 import {
+    addOptionGroupToProductDocument,
     assignProductToChannelDocument,
     assignProductVariantToChannelDocument,
     createChannelDocument,
     createCollectionDocument,
     createFacetDocument,
     createProductDocument,
+    createProductOptionGroupDocument,
     createProductVariantsDocument,
     deleteAssetDocument,
     deleteProductDocument,
@@ -1576,6 +1578,119 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
 
         afterAll(() => {
             shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+        });
+    });
+
+    // https://github.com/vendurehq/community-plugins/pull/35
+    describe('productInStock ignores disabled variants', () => {
+        const PRODUCT_NAME = 'Disabled Variant Stock Test Product';
+        let testProductId: string;
+        let variantWithStockId: string;
+
+        beforeAll(async () => {
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            await adminClient.asSuperAdmin();
+
+            const { createProduct } = await adminClient.query(createProductDocument, {
+                input: {
+                    translations: [
+                        {
+                            languageCode: LanguageCode.en,
+                            name: PRODUCT_NAME,
+                            slug: 'disabled-variant-stock-test-product',
+                            description: 'A product for testing that disabled variants do not affect productInStock',
+                        },
+                    ],
+                },
+            });
+            testProductId = createProduct.id;
+
+            const { createProductOptionGroup } = await adminClient.query(
+                createProductOptionGroupDocument,
+                {
+                    input: {
+                        code: 'disabled-variant-stock-size',
+                        translations: [{ languageCode: LanguageCode.en, name: 'Size' }],
+                        options: [
+                            {
+                                code: 'dvs-small',
+                                translations: [{ languageCode: LanguageCode.en, name: 'Small' }],
+                            },
+                            {
+                                code: 'dvs-large',
+                                translations: [{ languageCode: LanguageCode.en, name: 'Large' }],
+                            },
+                        ],
+                    },
+                },
+            );
+            await adminClient.query(addOptionGroupToProductDocument, {
+                productId: testProductId,
+                optionGroupId: createProductOptionGroup.id,
+            });
+            const smallOptionId = createProductOptionGroup.options.find(o => o.code === 'dvs-small')!.id;
+            const largeOptionId = createProductOptionGroup.options.find(o => o.code === 'dvs-large')!.id;
+
+            const { createProductVariants } = await adminClient.query(createProductVariantsDocument, {
+                input: [
+                    {
+                        productId: testProductId,
+                        sku: 'DIS-VAR-OOS',
+                        price: 1000,
+                        stockOnHand: 0,
+                        trackInventory: GlobalFlag.TRUE,
+                        optionIds: [smallOptionId],
+                        translations: [{ languageCode: LanguageCode.en, name: 'Out of stock variant' }],
+                    },
+                    {
+                        productId: testProductId,
+                        sku: 'DIS-VAR-INSTOCK',
+                        price: 1000,
+                        stockOnHand: 100,
+                        trackInventory: GlobalFlag.TRUE,
+                        optionIds: [largeOptionId],
+                        translations: [{ languageCode: LanguageCode.en, name: 'In stock variant' }],
+                    },
+                ],
+            });
+            variantWithStockId = createProductVariants.find(v => v?.sku === 'DIS-VAR-INSTOCK')!.id;
+            await awaitRunningJobs(adminClient);
+        });
+
+        it('product is inStock while both variants are enabled', async () => {
+            const result = await shopClient.query(searchProductsShopDocument, {
+                input: {
+                    term: PRODUCT_NAME,
+                    groupByProduct: true,
+                    inStock: true,
+                },
+            });
+            expect(result.search.items.map(i => i.productName)).toContain(PRODUCT_NAME);
+        });
+
+        it('product is NOT inStock once the in-stock variant is disabled', async () => {
+            await adminClient.query(updateProductVariantsDocument, {
+                input: [{ id: variantWithStockId, enabled: false }],
+            });
+            await awaitRunningJobs(adminClient);
+
+            const inStockResult = await shopClient.query(searchProductsShopDocument, {
+                input: {
+                    term: PRODUCT_NAME,
+                    groupByProduct: true,
+                    inStock: true,
+                },
+            });
+            expect(inStockResult.search.items.map(i => i.productName)).not.toContain(PRODUCT_NAME);
+
+            const notInStockResult = await shopClient.query(searchProductsShopDocument, {
+                input: {
+                    term: PRODUCT_NAME,
+                    groupByProduct: true,
+                    inStock: false,
+                },
+            });
+            expect(notInStockResult.search.items.map(i => i.productName)).toContain(PRODUCT_NAME);
         });
     });
 });
