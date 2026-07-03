@@ -33,6 +33,7 @@
         "braintree": "3.x"
     },
     "devDependencies": {
+        "@nestjs/testing": "^11.1.13",
         "@types/braintree": "^3.3.11",
         "@vendure/common": "3.6.0-minor-202603280303",
         "@vendure/core": "3.6.0-minor-202603280303",

@@ -1,11 +1,13 @@
-import { Injector } from '@vendure/core';
+import { ModuleRef } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
+import { EntityHydrator, Injector, TransactionalConnection } from '@vendure/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getGateway } from './braintree-common';
 import { braintreePaymentMethodHandler } from './braintree.handler';
 import { BRAINTREE_PLUGIN_OPTIONS } from './constants';
 
-vi.mock('./braintree-common', async (importOriginal) => {
+vi.mock('./braintree-common', async importOriginal => {
     const actual = await importOriginal<typeof import('./braintree-common')>();
     return {
         ...actual,
@@ -15,12 +17,16 @@ vi.mock('./braintree-common', async (importOriginal) => {
 
 const saleMock = vi.fn();
 
-function initHandler(pluginOptions: Record<string, any>) {
-    const fakeService = { hydrate: vi.fn().mockResolvedValue(undefined) };
-    const fakeModuleRef = {
-        get: (token: any) => (token === BRAINTREE_PLUGIN_OPTIONS ? pluginOptions : fakeService),
-    };
-    void braintreePaymentMethodHandler.init(new Injector(fakeModuleRef as any));
+async function initHandler(pluginOptions: Record<string, any>) {
+    const entityHydrator = { hydrate: vi.fn().mockResolvedValue(undefined) };
+    const moduleRef = await Test.createTestingModule({
+        providers: [
+            { provide: BRAINTREE_PLUGIN_OPTIONS, useValue: pluginOptions },
+            { provide: TransactionalConnection, useValue: {} },
+            { provide: EntityHydrator, useValue: entityHydrator },
+        ],
+    }).compile();
+    await braintreePaymentMethodHandler.init(new Injector(moduleRef.get(ModuleRef)));
 }
 
 function createPayment() {
@@ -39,10 +45,10 @@ function createPayment() {
 }
 
 describe('braintreePaymentMethodHandler', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         saleMock.mockReset();
         vi.mocked(getGateway).mockReturnValue({ transaction: { sale: saleMock } } as any);
-        initHandler({ storeCustomersInBraintree: false });
+        await initHandler({ storeCustomersInBraintree: false });
     });
 
     it('returns Declined with object metadata when the gateway rejects without a transaction', async () => {
@@ -54,8 +60,6 @@ describe('braintreePaymentMethodHandler', () => {
 
         expect(result.state).toBe('Declined');
         expect(result.errorMessage).toBe('Customer ID is invalid.');
-        // Payment.metadata is a non-nullable column: undefined here crashes the
-        // payment insert and surfaces a raw DB error to the customer.
         expect(result.metadata).toEqual({});
     });
 
@@ -87,7 +91,7 @@ describe('braintreePaymentMethodHandler', () => {
     });
 
     it('applies a custom extractMetadata function', async () => {
-        initHandler({
+        await initHandler({
             storeCustomersInBraintree: false,
             extractMetadata: (transaction: any) => ({ txStatus: transaction.status }),
         });
@@ -99,5 +103,20 @@ describe('braintreePaymentMethodHandler', () => {
         const result = await createPayment();
 
         expect(result.metadata).toEqual({ txStatus: 'authorized' });
+    });
+
+    it('falls back to object metadata when a custom extractMetadata returns null', async () => {
+        await initHandler({
+            storeCustomersInBraintree: false,
+            extractMetadata: () => null as any,
+        });
+        saleMock.mockResolvedValue({
+            success: true,
+            transaction: { id: 'tx_ok', status: 'authorized' },
+        });
+
+        const result = await createPayment();
+
+        expect(result.metadata).toEqual({});
     });
 });
