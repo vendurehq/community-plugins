@@ -1581,7 +1581,6 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
         });
     });
 
-    // https://github.com/vendurehq/community-plugins/pull/35
     describe('productInStock ignores disabled variants', () => {
         const PRODUCT_NAME = 'Disabled Variant Stock Test Product';
         let testProductId: string;
@@ -1668,29 +1667,35 @@ describe(`Elasticsearch plugin [${searchBackend as string}]`, () => {
             expect(result.search.items.map(i => i.productName)).toContain(PRODUCT_NAME);
         });
 
-        it('product is NOT inStock once the in-stock variant is disabled', async () => {
-            await adminClient.query(updateProductVariantsDocument, {
-                input: [{ id: variantWithStockId, enabled: false }],
+        describe('after disabling the in-stock variant', () => {
+            beforeAll(async () => {
+                await adminClient.query(updateProductVariantsDocument, {
+                    input: [{ id: variantWithStockId, enabled: false }],
+                });
+                await awaitRunningJobs(adminClient);
             });
-            await awaitRunningJobs(adminClient);
 
-            const inStockResult = await shopClient.query(searchProductsShopDocument, {
-                input: {
-                    term: PRODUCT_NAME,
-                    groupByProduct: true,
-                    inStock: true,
-                },
+            it('product does not appear in inStock: true results', async () => {
+                const result = await shopClient.query(searchProductsShopDocument, {
+                    input: {
+                        term: PRODUCT_NAME,
+                        groupByProduct: true,
+                        inStock: true,
+                    },
+                });
+                expect(result.search.items.map(i => i.productName)).not.toContain(PRODUCT_NAME);
             });
-            expect(inStockResult.search.items.map(i => i.productName)).not.toContain(PRODUCT_NAME);
 
-            const notInStockResult = await shopClient.query(searchProductsShopDocument, {
-                input: {
-                    term: PRODUCT_NAME,
-                    groupByProduct: true,
-                    inStock: false,
-                },
+            it('product appears in inStock: false results', async () => {
+                const result = await shopClient.query(searchProductsShopDocument, {
+                    input: {
+                        term: PRODUCT_NAME,
+                        groupByProduct: true,
+                        inStock: false,
+                    },
+                });
+                expect(result.search.items.map(i => i.productName)).toContain(PRODUCT_NAME);
             });
-            expect(notInStockResult.search.items.map(i => i.productName)).toContain(PRODUCT_NAME);
         });
     });
 });
