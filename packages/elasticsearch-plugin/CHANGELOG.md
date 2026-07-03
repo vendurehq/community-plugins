@@ -10,6 +10,10 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 * **elasticsearch-plugin:** introduce pluggable `SearchClientAdapter` interface so the plugin can be backed by either Elasticsearch or OpenSearch. Ship two first-party adapters: `ElasticsearchAdapter` (via `createElasticsearchAdapter`) and `OpenSearchAdapter` (via `createOpenSearchAdapter`). `@elastic/elasticsearch` and `@opensearch-project/opensearch` are both declared as optional peer dependencies — install only the one you use.
 * **elasticsearch-plugin:** expose `adapter.getRawClient()` escape hatch for advanced queries that are not on the `SearchClientAdapter` surface.
 
+### Bug Fixes
+
+* **elasticsearch-plugin:** filter stock level on enabled variants only ([#35](https://github.com/vendurehq/community-plugins/pull/35))
+
 ### BREAKING CHANGES
 
 * **elasticsearch-plugin:** `ElasticsearchPlugin.init({ host, port, clientOptions })` is replaced with `ElasticsearchPlugin.init({ adapter: () => SearchClientAdapter })`. The `adapter` option now takes a **factory** that produces a fresh `SearchClientAdapter` each time the plugin invokes it. The read-side `ElasticsearchService` and the write-side `ElasticsearchIndexerController` each call the factory in their own `onModuleInit`, so each owns an independent client and connection pool. This isolates user-facing search latency from bulk-indexing traffic — a long reindex on the indexer cannot saturate the pool serving live search queries — and keeps shutdown ordering safe: one provider’s `onModuleDestroy` closes only its own client without disturbing the other provider’s in-flight requests. (The adapters’ `close()` is also memoised as a defensive guard for misconfigured factories that hand out a shared instance.) Wrap existing configuration with `() => createElasticsearchAdapter({ host, port, clientOptions })` to preserve previous behaviour. See the README "Migrating from v1.x" section for a worked example.
