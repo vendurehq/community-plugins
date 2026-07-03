@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 1.0.1 (2026-07-03)
+
+### Bug Fixes
+
+* **braintree-plugin:** Return object metadata when gateway rejects without transaction ([#39](https://github.com/vendurehq/community-plugins/pull/39))
+
 ## 1.0.0 (2026-03-30)
 
 Initial release as `@vendure-community/braintree-plugin`, extracted from `@vendure/payments-plugin`.
