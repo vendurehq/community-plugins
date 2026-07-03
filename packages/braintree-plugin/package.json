@@ -18,7 +18,8 @@
         "build": "rimraf lib && tsc -p ./tsconfig.build.json",
         "lint": "eslint .",
         "ci": "npm run build",
-        "dev-server": "npm run build && DB=sqlite node -r ts-node/register e2e/braintree-dev-server.ts"
+        "dev-server": "npm run build && DB=sqlite node -r ts-node/register e2e/braintree-dev-server.ts",
+        "test": "vitest --run"
     },
     "homepage": "https://www.vendure.io/",
     "funding": "https://github.com/sponsors/michaelbromley",

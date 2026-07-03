@@ -112,7 +112,11 @@ async function processPayment(
         },
     });
     const extractMetadataFn = pluginOptions.extractMetadata ?? defaultExtractMetadataFn;
-    const metadata = response.transaction && extractMetadataFn(response.transaction);
+    // Gateway rejections of the validation class (e.g. invalid customer id, consumed
+    // nonce, 3DS amount mismatch) carry no transaction object. Metadata must still be
+    // an object: Payment.metadata is a non-nullable column, so returning undefined
+    // here crashes the payment insert and masks the real gateway message.
+    const metadata = response.transaction ? extractMetadataFn(response.transaction) : {};
     if (!response.success) {
         return {
             amount,
