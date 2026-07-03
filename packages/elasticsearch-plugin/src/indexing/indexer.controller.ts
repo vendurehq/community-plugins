@@ -976,8 +976,9 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
             ctx,
             `elastic-index-product-in-stock-${ctx.channelId}-${variants.map(v => v.id).join(',')}`,
             async () => {
+                const enabledVariants = variants.filter(variant => variant.enabled);
                 const stockLevels = await Promise.all(
-                    variants.map(variant => this.productVariantService.getSaleableStockLevel(ctx, variant)),
+                    enabledVariants.map(variant => this.productVariantService.getSaleableStockLevel(ctx, variant)),
                 );
                 return stockLevels.some(stockLevel => 0 < stockLevel);
             },
