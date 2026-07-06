@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HealthCheckError, HealthIndicator, HealthIndicatorResult } from '@nestjs/terminus';
+import { HealthCheckError, HealthIndicator, HealthIndicatorResult } from '@vendure/core';
 
 import { ElasticsearchService } from './elasticsearch.service';
 

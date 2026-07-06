@@ -55,8 +55,9 @@
     },
     "packages/braintree-plugin": {
       "name": "@vendure-community/braintree-plugin",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "devDependencies": {
+        "@nestjs/testing": "^11.1.13",
         "@types/braintree": "^3.3.11",
         "@vendure/common": "3.6.0-minor-202603280303",
         "@vendure/core": "3.6.0-minor-202603280303",
@@ -81,17 +82,17 @@
       "devDependencies": {
         "@elastic/elasticsearch": "^9.3.4",
         "@opensearch-project/opensearch": "^3.5.1",
-        "@vendure/common": "3.6.0-minor-202603280303",
-        "@vendure/core": "3.6.0-minor-202603280303",
-        "@vendure/testing": "3.6.0-minor-202603280303",
+        "@vendure/common": "3.7.0",
+        "@vendure/core": "3.7.0",
+        "@vendure/testing": "3.7.0",
         "rimraf": "^5.0.5",
         "typescript": "5.8.2",
       },
       "peerDependencies": {
         "@elastic/elasticsearch": "^9.1.0",
         "@opensearch-project/opensearch": "^3.0.0",
-        "@vendure/common": "^3.6.0-0",
-        "@vendure/core": "^3.6.0-0",
+        "@vendure/common": "^3.7.0",
+        "@vendure/core": "^3.7.0",
       },
       "optionalPeers": [
         "@elastic/elasticsearch",
@@ -100,7 +101,7 @@
     },
     "packages/mollie-plugin": {
       "name": "@vendure-community/mollie-plugin",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "currency.js": "2.0.4",
       },
@@ -2950,6 +2951,12 @@
 
     "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@5.0.1", "", {}, "sha512-tD40eHxA35h0PEIZNeIjkHoDR4YjjJp34biM0mDvplBe//mB+IHCqHDGV7pxF+7MklTvighcCPPZC7ynWyjdTA=="],
 
+    "@vendure-community/elasticsearch-plugin/@vendure/common": ["@vendure/common@3.7.0", "", {}, "sha512-Pl1rJL6+QZOWhazyWjzPpNx5zOfCUPq9ahSLQUDBzj4ziyGKgnjo33r1nYSPuksMuqskHYVv8lOf+hRTCevzyg=="],
+
+    "@vendure-community/elasticsearch-plugin/@vendure/core": ["@vendure/core@3.7.0", "", { "dependencies": { "@apollo/server": "^4.12.2", "@graphql-tools/stitch": "^10.1.16", "@nestjs/apollo": "~13.1.0", "@nestjs/common": "^11.0.12", "@nestjs/core": "^11.0.12", "@nestjs/graphql": "~13.1.0", "@nestjs/platform-express": "^11.0.12", "@nestjs/typeorm": "^11.0.0", "@vendure/common": "3.7.0", "bcrypt": "^6.0.0", "cookie-session": "^2.1.0", "cron-time-generator": "^2.0.3", "croner": "^10.0.1", "cronstrue": "^3.14.0", "csv-parse": "^6.2.1", "express": "^5.1.0", "file-type": "^19.0.0", "fs-extra": "^11.2.0", "graphql": "^16.11.0", "graphql-scalars": "^1.24.2", "graphql-tag": "^2.12.6", "graphql-upload": "^17.0.0", "http-proxy-middleware": "^3.0.3", "i18next": "^26.0.2", "i18next-fs-backend": "^2.6.6", "i18next-http-middleware": "^3.9.7", "i18next-icu": "^2.3.0", "image-size": "^2.0.2", "intl-messageformat": "^10.5.11", "mime-types": "^3.0.2", "ms": "^2.1.3", "nanoid": "^3.3.8", "picocolors": "^1.1.1", "reflect-metadata": "^0.2.2", "rxjs": "^7.8.1", "semver": "^7.6.0", "typeorm": "^0.3.21" }, "peerDependencies": { "ioredis": "^5.3.2" }, "optionalPeers": ["ioredis"] }, "sha512-LFNIDxjN9ScquuTDD1NA4df4YsLUEdI2rXzVQymaPHXDEa46vca0TNYicrB2HUmglwj24AuIgPPW00m7lIOA8A=="],
+
+    "@vendure-community/elasticsearch-plugin/@vendure/testing": ["@vendure/testing@3.7.0", "", { "dependencies": { "@graphql-typed-document-node/core": "^3.2.0", "@vendure/common": "3.7.0", "faker": "^4.1.0", "graphql": "^16.11.0", "graphql-tag": "^2.12.6", "mime-types": "^3.0.2", "sql.js": "1.14.1" } }, "sha512-hkg8GwCT4OjvKYi/skMHs1veh2xHwQFkAc6VhXe6nXLulrN1ZXUVQ4PEuH/Kj7lJAlun2bPUqqn0b5PUQVJQDg=="],
+
     "@vendure/core/semver": ["semver@7.7.2", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-RF0Fw+rO5AMf9MAyaRXI4AV0Ulj5lMHqVxxdSgiVbixSCXoEmmX/jk0CuJw4+3SqroYO9VoUh+HcuJivvtJemA=="],
 
     "@vitest/mocker/estree-walker": ["estree-walker@3.0.3", "", { "dependencies": { "@types/estree": "^1.0.0" } }, "sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g=="],
@@ -3245,6 +3252,12 @@
     "@types/request/form-data/mime-types": ["mime-types@2.1.35", "", { "dependencies": { "mime-db": "1.52.0" } }, "sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw=="],
 
     "@typescript-eslint/typescript-estree/minimatch/brace-expansion": ["brace-expansion@5.0.5", "", { "dependencies": { "balanced-match": "^4.0.2" } }, "sha512-VZznLgtwhn+Mact9tfiwx64fA9erHH/MCXEUfB/0bX/6Fz6ny5EGTXYltMocqg4xFAQZtnO3DHWWXi8RiuN7cQ=="],
+
+    "@vendure-community/elasticsearch-plugin/@vendure/core/i18next": ["i18next@26.3.3", "", { "peerDependencies": { "typescript": "^5 || ^6" }, "optionalPeers": ["typescript"] }, "sha512-aYVegyBdXSO93CMMihvr47jI7GHSOcIahMpJX+qzUXDzW4xDJf2uenIA+45vDU+YhiVdcfsql70AC9RVdMNrHg=="],
+
+    "@vendure-community/elasticsearch-plugin/@vendure/core/i18next-fs-backend": ["i18next-fs-backend@2.6.6", "", {}, "sha512-mYGu6Nt8RIp3X/U8Y+Gej1wo5xmYWmGKLqBGMCC2OCAou5rW5epeHgHmVcw20mJs9Z9+DAPHIxQPNCgFyPRMeg=="],
+
+    "@vendure-community/elasticsearch-plugin/@vendure/core/i18next-http-middleware": ["i18next-http-middleware@3.9.7", "", {}, "sha512-k4Aa39thnQXGox5ZeKvlOwbDsFz+iGxtPJITWm6xmmErNZOeGMXIoH9XwK3ITUq7lqHaywnIH9gLwOraU4jJvQ=="],
 
     "apache-arrow/@types/node/undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
 
