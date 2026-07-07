@@ -1,4 +1,4 @@
-import Stripe from 'stripe';
+import { StripeMetadataParam } from './stripe-types';
 
 const MAX_KEYS = 50;
 const MAX_KEY_NAME_LENGTH = 40;
@@ -14,7 +14,7 @@ const MAX_VALUE_LENGTH = 500;
  * You can specify up to 50 keys, with key names up to 40 characters long and values up to 500 characters long.
  *
  */
-export function sanitizeMetadata(metadata: Stripe.MetadataParam) {
+export function sanitizeMetadata(metadata: StripeMetadataParam): StripeMetadataParam {
     if (typeof metadata !== 'object' && metadata !== null) return {};
 
     const keys = Object.keys(metadata)
@@ -22,12 +22,12 @@ export function sanitizeMetadata(metadata: Stripe.MetadataParam) {
         .filter(
             keyName => typeof metadata[keyName] !== 'string' || metadata[keyName].length <= MAX_VALUE_LENGTH,
         )
-        .slice(0, MAX_KEYS) as Array<keyof Stripe.MetadataParam>;
+        .slice(0, MAX_KEYS) as Array<keyof StripeMetadataParam>;
 
     const sanitizedMetadata = keys.reduce((obj, keyName) => {
         obj[keyName] = metadata[keyName];
         return obj;
-    }, {} as Stripe.MetadataParam);
+    }, {} as StripeMetadataParam);
 
     return sanitizedMetadata;
 }

@@ -12,14 +12,21 @@ import {
     TransactionalConnection,
     UserInputError,
 } from '@vendure/core';
-import Stripe from 'stripe';
 
 import { loggerCtx, STRIPE_PLUGIN_OPTIONS } from './constants';
 import { sanitizeMetadata } from './metadata-sanitize';
 import { VendureStripeClient } from './stripe-client';
+import { StripeEvent, StripeRefund } from './stripe-types';
 import { getAmountInStripeMinorUnits } from './stripe-utils';
 import { stripePaymentMethodHandler } from './stripe.handler';
 import { StripePluginOptions } from './types';
+
+const STRIPE_REFUND_REASONS = ['duplicate', 'fraudulent', 'requested_by_customer'] as const;
+type StripeRefundReason = (typeof STRIPE_REFUND_REASONS)[number];
+
+function isStripeRefundReason(reason: string | undefined): reason is StripeRefundReason {
+    return !!reason && (STRIPE_REFUND_REASONS as readonly string[]).includes(reason);
+}
 
 @Injectable()
 export class StripeService {
@@ -98,7 +105,7 @@ export class StripeService {
         order: Order,
         payload: Buffer,
         signature: string,
-    ): Promise<Stripe.Event> {
+    ): Promise<StripeEvent> {
         const stripe = await this.getStripeClient(ctx, order);
         return stripe.webhooks.constructEvent(payload, signature, stripe.webhookSecret);
     }
@@ -108,11 +115,18 @@ export class StripeService {
         order: Order,
         payment: Payment,
         amount: number,
-    ): Promise<Stripe.Response<Stripe.Refund>> {
+        reason?: string,
+    ): Promise<StripeRefund> {
         const stripe = await this.getStripeClient(ctx, order);
-        return stripe.refunds.create({
+        const structuredReason = isStripeRefundReason(reason) ? reason : undefined;
+        const params: Parameters<typeof stripe.refunds.create>[0] = {
             payment_intent: payment.transactionId,
             amount,
+            ...(structuredReason ? { reason: structuredReason } : {}),
+            ...(reason && !structuredReason ? { metadata: { vendureRefundReason: reason } } : {}),
+        };
+        return stripe.refunds.create(params, {
+            idempotencyKey: `refund_${payment.transactionId}_${amount}`,
         });
     }
 
@@ -140,7 +154,12 @@ export class StripeService {
         }
         const apiKey = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'apiKey');
         const webhookSecret = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'webhookSecret');
-        return new VendureStripeClient(apiKey, webhookSecret);
+        return new VendureStripeClient(
+            apiKey,
+            webhookSecret,
+            this.options.apiVersion,
+            this.options.httpClient,
+        );
     }
 
     private findOrThrowArgValue(args: ConfigArg[], name: string): string {
