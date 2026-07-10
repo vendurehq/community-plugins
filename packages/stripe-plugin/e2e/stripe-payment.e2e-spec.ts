@@ -278,7 +278,7 @@ describe('Stripe payments', () => {
         });
         expect(connectedAccountHeader).toEqual('acct_connected');
         expect(createStripePaymentIntent).toEqual('test-client-secret');
-        StripePlugin.options.paymentIntentCreateParams = undefined;
+        StripePlugin.options.requestOptions = undefined;
     });
 
     // https://github.com/vendurehq/vendure/issues/2412
@@ -340,7 +340,7 @@ describe('Stripe payments', () => {
         const dbCustomer = await customerRepo.findOneByOrFail({
             emailAddress: customers[1].emailAddress,
         });
-        dbCustomer.customFields.stripeCustomerId = '';
+        dbCustomer.customFields.stripeCustomerId = null;
         await customerRepo.save(dbCustomer, { reload: false });
 
         await shopClient.asUserWithCredentials(customers[1].emailAddress, 'test');

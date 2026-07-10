@@ -33,18 +33,14 @@ export class StripeService {
     async createPaymentIntent(ctx: RequestContext, order: Order): Promise<string> {
         let customerId: string | undefined;
         const stripe = await this.getStripeClient(ctx, order);
+        const requestOptions = await this.resolveRequestOptions(ctx, order);
 
         if (this.options.storeCustomersInStripe && ctx.activeUserId) {
-            customerId = await this.getStripeCustomerId(ctx, order);
+            customerId = await this.getStripeCustomerId(ctx, order, requestOptions);
         }
         const amountInMinorUnits = getAmountInStripeMinorUnits(order);
 
         const additionalParams = await this.options.paymentIntentCreateParams?.(
-            new Injector(this.moduleRef),
-            ctx,
-            order,
-        );
-        const additionalOptions = await this.options.requestOptions?.(
             new Injector(this.moduleRef),
             ctx,
             order,
@@ -77,7 +73,7 @@ export class StripeService {
             },
             {
                 idempotencyKey: `${order.code}_${amountInMinorUnits}`,
-                ...(additionalOptions ?? {}),
+                ...(requestOptions ?? {}),
             },
         );
 
@@ -152,11 +148,34 @@ export class StripeService {
     }
 
     /**
+     * Resolves the optional per-request options (e.g. a `stripeAccount` targeting a
+     * connected account). Returns `undefined` when no callback is configured or it
+     * yields an empty object, because the Stripe SDK rejects an empty options hash.
+     */
+    private async resolveRequestOptions(
+        ctx: RequestContext,
+        order: Order,
+    ): Promise<Stripe.RequestOptions | undefined> {
+        const additionalOptions = await this.options.requestOptions?.(
+            new Injector(this.moduleRef),
+            ctx,
+            order,
+        );
+        return additionalOptions && Object.keys(additionalOptions).length > 0
+            ? additionalOptions
+            : undefined;
+    }
+
+    /**
      * Returns the stripeCustomerId if the Customer has one. If that's not the case, queries Stripe to check
      * if the customer is already registered, in which case it saves the id as stripeCustomerId and returns it.
      * Otherwise, creates a new Customer record in Stripe and returns the generated id.
      */
-    private async getStripeCustomerId(ctx: RequestContext, activeOrder: Order): Promise<string | undefined> {
+    private async getStripeCustomerId(
+        ctx: RequestContext,
+        activeOrder: Order,
+        requestOptions?: Stripe.RequestOptions,
+    ): Promise<string | undefined> {
         const [stripe, order] = await Promise.all([
             this.getStripeClient(ctx, activeOrder),
             // Load relation with customer not available in the response from activeOrderService.getOrderFromContext()
@@ -179,25 +198,14 @@ export class StripeService {
 
         let stripeCustomerId;
 
-        // Resolve requestOptions the same way as createPaymentIntent() does, so that
-        // customer lookup/creation runs against the same Stripe account as the
-        // PaymentIntent (e.g. a connected account when `stripeAccount` is set).
-        // Note: the Stripe SDK rejects an empty options hash, so it is only passed
-        // along when it actually contains options.
-        const additionalOptions = await this.options.requestOptions?.(
-            new Injector(this.moduleRef),
-            ctx,
-            order,
+        // The customer lookup and creation must hit the same Stripe account as the
+        // PaymentIntent. When `requestOptions` carries a `stripeAccount`, omitting it
+        // here would create the customer on the platform account while the intent
+        // targets the connected account, surfacing as "No such customer".
+        const stripeCustomers = await stripe.customers.list(
+            { email: customer.emailAddress },
+            requestOptions,
         );
-        const customerRequestOptions =
-            additionalOptions && Object.keys(additionalOptions).length > 0
-                ? additionalOptions
-                : undefined;
-
-        const customerListParams = { email: customer.emailAddress };
-        const stripeCustomers = customerRequestOptions
-            ? await stripe.customers.list(customerListParams, customerRequestOptions)
-            : await stripe.customers.list(customerListParams);
         if (stripeCustomers.data.length > 0) {
             stripeCustomerId = stripeCustomers.data[0].id;
         } else {
@@ -206,17 +214,17 @@ export class StripeService {
                 ctx,
                 order,
             );
-            const customerCreateParams = {
-                email: customer.emailAddress,
-                name: `${customer.firstName} ${customer.lastName}`,
-                ...(additionalParams ?? {}),
-                ...(additionalParams?.metadata
-                    ? { metadata: sanitizeMetadata(additionalParams.metadata) }
-                    : {}),
-            };
-            const newStripeCustomer = customerRequestOptions
-                ? await stripe.customers.create(customerCreateParams, customerRequestOptions)
-                : await stripe.customers.create(customerCreateParams);
+            const newStripeCustomer = await stripe.customers.create(
+                {
+                    email: customer.emailAddress,
+                    name: `${customer.firstName} ${customer.lastName}`,
+                    ...(additionalParams ?? {}),
+                    ...(additionalParams?.metadata
+                        ? { metadata: sanitizeMetadata(additionalParams.metadata) }
+                        : {}),
+                },
+                requestOptions,
+            );
 
             stripeCustomerId = newStripeCustomer.id;
 
