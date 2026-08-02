@@ -27,6 +27,7 @@ import {
     createChannelDocument,
     createPaymentMethodDocument,
     getCustomerListDocument,
+    getOrderPaymentsDocument,
 } from './graphql/admin-definitions';
 import { ResultOf } from './graphql/graphql-admin';
 import { FragmentOf } from './graphql/graphql-shop';
@@ -465,6 +466,62 @@ describe('Stripe payments', () => {
         // `orderService.transitionToState()` or the `orderService.addPaymentToOrder()`
         // throws an error of 'error.entity-with-id-not-found'
         expect(result.status).toEqual(200);
+    });
+
+    it('Should not add a second Payment when the same event is redelivered', async () => {
+        // Stripe retries on its own schedule after a slow or failed response, and an
+        // endpoint can be replayed, so the settled event above can arrive again. This
+        // replays it byte-for-byte: same PaymentIntent, same signature.
+        const MOCKED_WEBHOOK_PAYLOAD = {
+            id: 'evt_0',
+            object: 'event',
+            api_version: '2022-11-15',
+            data: {
+                object: {
+                    id: 'pi_0',
+                    currency: 'usd',
+                    metadata: {
+                        orderCode: order.code,
+                        orderId: parseInt(order.id.replace('T_', ''), 10),
+                        channelToken: E2E_DEFAULT_CHANNEL_TOKEN,
+                    },
+                    amount_received: order.totalWithTax,
+                    status: 'succeeded',
+                },
+            },
+            livemode: false,
+            pending_webhooks: 1,
+            request: {
+                id: 'req_0',
+                idempotency_key: '00000000-0000-0000-0000-000000000000',
+            },
+            type: 'payment_intent.succeeded',
+        };
+
+        const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
+        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const header = stripeWebhooks.generateTestHeaderString({
+            payload: payloadString,
+            secret: 'test-signing-secret',
+        });
+
+        const result = await fetch(`http://localhost:${serverPort}/payments/stripe`, {
+            method: 'post',
+            body: payloadString,
+            headers: { 'Content-Type': 'application/json', 'Stripe-Signature': header },
+        });
+
+        // A redelivery is not an error: Stripe must be told the event was handled,
+        // otherwise it keeps retrying an event that is already settled.
+        expect(result.status).toEqual(200);
+
+        const { order: orderWithPayments } = await adminClient.query(getOrderPaymentsDocument, {
+            id: order.id,
+        });
+        const paymentsForIntent = orderWithPayments!.payments!.filter(
+            payment => payment.transactionId === 'pi_0',
+        );
+        expect(paymentsForIntent.length).toEqual(1);
     });
 
     // https://github.com/vendurehq/vendure/issues/3249
