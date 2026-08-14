@@ -868,6 +868,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                         Logger.debug(JSON.stringify(item.delete.error, null, 2), loggerCtx);
                     }
                 });
+                throw new Error(`Bulk operations failed on index [${fullIndexName}]`);
             } else {
                 Logger.debug(
                     `Executed ${body.items.length} bulk operations on index [${fullIndexName}]`,
@@ -878,6 +879,7 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         } catch (e: any) {
             Logger.error(`Error when attempting to run bulk operations [${JSON.stringify(e)}]`, loggerCtx);
             Logger.error('Error details: ' + JSON.stringify(e.body?.error, null, 2), loggerCtx);
+            throw e;
         }
     }
 
