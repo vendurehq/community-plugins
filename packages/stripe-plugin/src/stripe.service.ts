@@ -17,7 +17,7 @@ import Stripe from 'stripe';
 import { loggerCtx, STRIPE_PLUGIN_OPTIONS } from './constants';
 import { sanitizeMetadata } from './metadata-sanitize';
 import { VendureStripeClient } from './stripe-client';
-import { getAmountInStripeMinorUnits } from './stripe-utils';
+import { currencyHasFractionPart, getAmountInStripeMinorUnits } from './stripe-utils';
 import { stripePaymentMethodHandler } from './stripe.handler';
 import { StripePluginOptions } from './types';
 
@@ -106,9 +106,17 @@ export class StripeService {
         amount: number,
     ): Promise<Stripe.Response<Stripe.Refund>> {
         const stripe = await this.getStripeClient(ctx, order);
+        // Vendure stores money amounts multiplied by 100. For zero-decimal currencies (e.g. JPY),
+        // Stripe expects the raw amount, so apply the same conversion as the charge side
+        // (see `getAmountInStripeMinorUnits`). Without this, refunds in zero-decimal currencies
+        // are sent as 100x the real amount and rejected by Stripe with
+        // "Refund amount ... is greater than charge amount".
+        const refundAmount = currencyHasFractionPart(order.currencyCode)
+            ? amount
+            : Math.round(amount / 100);
         return stripe.refunds.create({
             payment_intent: payment.transactionId,
-            amount,
+            amount: refundAmount,
         });
     }
 
