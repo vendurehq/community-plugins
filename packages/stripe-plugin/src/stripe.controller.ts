@@ -7,6 +7,7 @@ import {
     Logger,
     Order,
     OrderService,
+    Payment,
     PaymentMethodService,
     RequestContextService,
     TransactionalConnection,
@@ -107,6 +108,28 @@ export class StripeController {
                 return;
             }
 
+            // Stripe guarantees at-least-once delivery, so this event can arrive again:
+            // on its retry schedule after a slow or failed response, or when an endpoint
+            // is replayed. Recognising that as "already done" is what lets the failure
+            // paths below throw. Without it, a redelivery falls through to a state
+            // transition that cannot succeed from PaymentSettled, and would be reported
+            // as a settlement failure — leaving Stripe retrying a settled order forever.
+            const existingPayment = await this.connection
+                .getRepository(ctx, Payment)
+                .createQueryBuilder('payment')
+                .innerJoin('payment.order', 'order')
+                .where('payment.transactionId = :transactionId', { transactionId: paymentIntent.id })
+                .andWhere('order.id = :orderId', { orderId })
+                .getOne();
+
+            if (existingPayment) {
+                Logger.info(
+                    `Stripe payment intent id ${paymentIntent.id} already added to order ${orderCode}`,
+                    loggerCtx,
+                );
+                return;
+            }
+
             if (order.state !== 'ArrangingPayment' && order.state !== 'ArrangingAdditionalPayment') {
                 // The stripe plugin based on https://github.com/vendurehq/vendure/pull/3624 can export the
                 // StripeService to support additional payment flows where state can be ArrangingAdditionalPayment.
@@ -140,13 +163,19 @@ export class StripeController {
                     );
                 }
 
-                // If the order is still not in the ArrangingPayment state, log an error
+                // If the order is still not in the ArrangingPayment state, fail the
+                // request. Returning here logged the error but still answered 2xx, so
+                // Stripe recorded the event as delivered and never retried: the money
+                // was captured and the order left unsettled, with nothing but a log
+                // line to notice it by.
                 if (transitionToStateResult instanceof OrderStateTransitionError) {
                     Logger.error(
                         `Error transitioning order ${orderCode} to ArrangingPayment state: ${transitionToStateResult.message}`,
                         loggerCtx,
                     );
-                    return;
+                    throw new InternalServerError(
+                        `Stripe settlement failed for order ${orderCode}: could not transition to ArrangingPayment`,
+                    );
                 }
             }
 
@@ -165,7 +194,9 @@ export class StripeController {
                     `Error adding payment to order ${orderCode}: ${addPaymentToOrderResult.message}`,
                     loggerCtx,
                 );
-                return;
+                throw new InternalServerError(
+                    `Stripe settlement failed for order ${orderCode}: ${addPaymentToOrderResult.message}`,
+                );
             }
 
             // The payment intent ID is added to the order only if we can reach this point.
