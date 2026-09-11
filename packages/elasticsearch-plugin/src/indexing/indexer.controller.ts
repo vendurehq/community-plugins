@@ -1,4 +1,5 @@
 import type { SearchClientAdapter } from '../adapter';
+import type { BulkResponseBody } from '../adapter/search-client-adapter';
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { unique } from '@vendure/common/lib/unique';
@@ -46,6 +47,7 @@ import {
     VariantIndexItem,
 } from '../types';
 
+import { BulkOperationError, summarizeBulkResponse } from './bulk-errors';
 import { createIndices, getIndexNameByAlias } from './indexing-utils';
 
 export const defaultProductRelations: Array<EntityRelationPaths<Product>> = [
@@ -258,44 +260,55 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                     throw e;
                 }
 
-                const totalProductIds = await this.connection.rawConnection
-                    .getRepository(Product)
-                    .createQueryBuilder('product')
-                    .where('product.deletedAt IS NULL')
-                    .getCount();
-
-                Logger.verbose(`Will reindex ${totalProductIds} products`, loggerCtx);
-
-                let productIds = [];
-                let skip = 0;
+                let totalProductIds = 0;
                 let finishedProductsCount = 0;
-                do {
-                    productIds = await this.connection.rawConnection
+                try {
+                    totalProductIds = await this.connection.rawConnection
                         .getRepository(Product)
                         .createQueryBuilder('product')
-                        .select('product.id')
                         .where('product.deletedAt IS NULL')
-                        .skip(skip)
-                        .take(this.options.reindexProductsChunkSize)
-                        .getMany();
+                        .getCount();
 
-                    for (const { id: productId } of productIds) {
-                        await this.updateProductsOperationsOnly(ctx, productId, variantIndexNameForReindex);
-                        finishedProductsCount++;
-                        observer.next({
-                            total: totalProductIds,
-                            completed: Math.min(finishedProductsCount, totalProductIds),
-                            duration: +new Date() - timeStart,
-                        });
-                    }
+                    Logger.verbose(`Will reindex ${totalProductIds} products`, loggerCtx);
 
-                    skip += this.options.reindexProductsChunkSize;
+                    let productIds = [];
+                    let skip = 0;
+                    do {
+                        productIds = await this.connection.rawConnection
+                            .getRepository(Product)
+                            .createQueryBuilder('product')
+                            .select('product.id')
+                            .where('product.deletedAt IS NULL')
+                            .skip(skip)
+                            .take(this.options.reindexProductsChunkSize)
+                            .getMany();
 
-                    Logger.verbose(`Done ${finishedProductsCount} / ${totalProductIds} products`);
-                } while (productIds.length >= this.options.reindexProductsChunkSize);
+                        for (const { id: productId } of productIds) {
+                            await this.updateProductsOperationsOnly(ctx, productId, variantIndexNameForReindex);
+                            finishedProductsCount++;
+                            observer.next({
+                                total: totalProductIds,
+                                completed: Math.min(finishedProductsCount, totalProductIds),
+                                duration: +new Date() - timeStart,
+                            });
+                        }
 
-                // Switch the index to the new reindexed one
-                await this.switchAlias(reindexVariantAliasName, variantIndexName);
+                        skip += this.options.reindexProductsChunkSize;
+
+                        Logger.verbose(`Done ${finishedProductsCount} / ${totalProductIds} products`);
+                    } while (productIds.length >= this.options.reindexProductsChunkSize);
+
+                    // Switch the index to the new reindexed one
+                    await this.switchAlias(reindexVariantAliasName, variantIndexName);
+                } catch (e: any) {
+                    Logger.error(
+                        `Reindex aborted after ${finishedProductsCount}/${totalProductIds} products: ${e.message}`,
+                        loggerCtx,
+                        e.stack,
+                    );
+                    await this.deleteIndexBehindAlias(reindexVariantAliasName);
+                    throw e;
+                }
 
                 Logger.verbose('Completed reindexing!', loggerCtx);
 
@@ -477,26 +490,49 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
                 });
 
                 if (originalVariantAliasExist.body && originalVariantIndexName) {
-                    await this.adapter.indices.delete({
-                        index: [originalVariantIndexName],
-                    });
+                    try {
+                        await this.adapter.indices.delete({
+                            index: [originalVariantIndexName],
+                        });
+                    } catch (e: any) {
+                        Logger.error(
+                            `Could not delete previous index "${originalVariantIndexName}" after switching alias "${variantIndexName}": ${e.message}`,
+                            loggerCtx,
+                            e.stack,
+                        );
+                    }
                 }
             }
         } catch (e: any) {
-            Logger.error('Could not switch indexes');
+            Logger.error(
+                `Could not switch alias "${reindexVariantAliasName}" to "${variantIndexName}": ${e.message}`,
+                loggerCtx,
+                e.stack,
+            );
+            throw e;
         } finally {
-            const reindexVariantAliasExist = await this.adapter.indices.existsAlias({
-                name: reindexVariantAliasName,
-            });
-            if (reindexVariantAliasExist.body) {
-                const reindexVariantAliasResult = await this.adapter.indices.getAlias({
-                    name: reindexVariantAliasName,
-                });
-                const reindexVariantIndexName = Object.keys(reindexVariantAliasResult.body)[0];
-                await this.adapter.indices.delete({
-                    index: [reindexVariantIndexName],
-                });
+            await this.deleteIndexBehindAlias(reindexVariantAliasName);
+        }
+    }
+
+    /**
+     * Deletes the index behind the given alias, if the alias exists. Used to remove the
+     * temporary reindex index both after a successful alias switch and when a reindex aborts.
+     * Never throws: a failed cleanup is logged so it cannot mask the error that caused the abort.
+     */
+    private async deleteIndexBehindAlias(aliasName: string): Promise<void> {
+        try {
+            const aliasExists = await this.adapter.indices.existsAlias({ name: aliasName });
+            if (!aliasExists.body) {
+                return;
             }
+            const aliasResult = await this.adapter.indices.getAlias({ name: aliasName });
+            const indexName = Object.keys(aliasResult.body)[0];
+            if (indexName) {
+                await this.adapter.indices.delete({ index: [indexName] });
+            }
+        } catch (e: any) {
+            Logger.error(`Could not delete index behind alias "${aliasName}": ${e.message}`, loggerCtx, e.stack);
         }
     }
 
@@ -847,41 +883,30 @@ export class ElasticsearchIndexerController implements OnModuleInit, OnModuleDes
         if (operations.length === 0) {
             return;
         }
+        const fullIndexName = this.options.indexPrefix + indexName;
+        let body: BulkResponseBody;
         try {
-            const fullIndexName = this.options.indexPrefix + indexName;
-            const { body } = await this.adapter.bulk({
+            ({ body } = await this.adapter.bulk({
                 refresh: true,
                 index: fullIndexName,
                 body: operations,
-            });
-
-            if (body.errors) {
-                Logger.error(
-                    `Some errors occurred running bulk operations on ${fullIndexName}! Set logger to "debug" to print all errors.`,
-                    loggerCtx,
-                );
-                body.items.forEach(item => {
-                    if (item.index) {
-                        Logger.debug(JSON.stringify(item.index.error, null, 2), loggerCtx);
-                    }
-                    if (item.update) {
-                        Logger.debug(JSON.stringify(item.update.error, null, 2), loggerCtx);
-                    }
-                    if (item.delete) {
-                        Logger.debug(JSON.stringify(item.delete.error, null, 2), loggerCtx);
-                    }
-                });
-            } else {
-                Logger.debug(
-                    `Executed ${body.items.length} bulk operations on index [${fullIndexName}]`,
-                    loggerCtx,
-                );
-            }
-            return body;
+            }));
         } catch (e: any) {
-            Logger.error(`Error when attempting to run bulk operations [${JSON.stringify(e)}]`, loggerCtx);
-            Logger.error('Error details: ' + JSON.stringify(e.body?.error, null, 2), loggerCtx);
+            Logger.error(`Bulk request on index "${fullIndexName}" failed: ${e.message}`, loggerCtx, e.stack);
+            throw e;
         }
+        const summary = summarizeBulkResponse(body);
+        if (summary.failures.length > 0) {
+            const error = new BulkOperationError(fullIndexName, summary.failures, summary.total);
+            Logger.error(error.message, loggerCtx);
+            Logger.debug(JSON.stringify(summary.failures), loggerCtx);
+            throw error;
+        }
+        Logger.debug(
+            `Executed ${summary.total} bulk operations on [${fullIndexName}] (${summary.notFoundDeletes} deletes of missing documents)`,
+            loggerCtx,
+        );
+        return body;
     }
 
     private async createVariantIndexItem(
