@@ -7,6 +7,7 @@ import {
     Logger,
     Order,
     OrderService,
+    Payment,
     PaymentMethodService,
     RequestContextService,
     TransactionalConnection,
@@ -28,6 +29,15 @@ const ignorePaymentIntentEvent = 'Event has no Vendure metadata, skipped.';
 
 @Controller('payments')
 export class StripeController {
+    /**
+     * Per-order mutex chains serializing webhook settlement within this
+     * process. The pessimistic row lock inside the transaction covers
+     * overlap across processes, but SQLite-family drivers cannot take it —
+     * and the e2e suite runs on sqljs — so same-process overlap is
+     * serialized here on every driver instead.
+     */
+    private readonly settlementLocks = new Map<string, Promise<void>>();
+
     constructor(
         @Inject(STRIPE_PLUGIN_OPTIONS) private options: StripePluginOptions,
         private paymentMethodService: PaymentMethodService,
@@ -101,13 +111,32 @@ export class StripeController {
             orderId: string;
         };
 
-        await this.connection.withTransaction(outerCtx, async (ctx: RequestContext) => {
+        const releaseSettlementLock = await this.acquireOrderSettlementLock(orderCode);
+        await this.connection
+            .withTransaction(outerCtx, async (ctx: RequestContext) => {
             const order = await this.orderService.findOneByCode(ctx, orderCode);
 
             if (!order) {
                 throw new Error(
                     `Unable to find order ${orderCode}, unable to settle payment ${paymentIntent.id}!`,
                 );
+            }
+
+            // Serialize settlement for this order across processes: without a
+            // lock, two overlapping deliveries can both pass the idempotency
+            // check below and settle twice. SQLite-family drivers do not
+            // support pessimistic locks, so this degrades gracefully there —
+            // same-process overlap on those drivers is serialized by the
+            // in-process mutex instead (see acquireOrderSettlementLock).
+            try {
+                await this.connection
+                    .getRepository(ctx, Order)
+                    .createQueryBuilder('order')
+                    .setLock('pessimistic_write')
+                    .where('order.id = :orderId', { orderId })
+                    .getOne();
+            } catch {
+                // Lock not supported (e.g. SQLite) — continue without it
             }
 
             // The secret was resolved without the order; run the unchanged
@@ -125,6 +154,28 @@ export class StripeController {
                 // This should never happen as the webhook is configured to receive
                 // payment_intent.succeeded and payment_intent.payment_failed events only
                 Logger.info(`Received ${event.type} status update for order ${orderCode}`, loggerCtx);
+                return;
+            }
+
+            // Stripe guarantees at-least-once delivery, so this event can arrive again:
+            // on its retry schedule after a slow or failed response, or when an endpoint
+            // is replayed. Recognising that as "already done" is what lets the failure
+            // paths below throw. Without it, a redelivery falls through to a state
+            // transition that cannot succeed from PaymentSettled, and would be reported
+            // as a settlement failure — leaving Stripe retrying a settled order forever.
+            const existingPayment = await this.connection
+                .getRepository(ctx, Payment)
+                .createQueryBuilder('payment')
+                .innerJoin('payment.order', 'order')
+                .where('payment.transactionId = :transactionId', { transactionId: paymentIntent.id })
+                .andWhere('order.id = :orderId', { orderId })
+                .getOne();
+
+            if (existingPayment) {
+                Logger.info(
+                    `Stripe payment intent id ${paymentIntent.id} already added to order ${orderCode}`,
+                    loggerCtx,
+                );
                 return;
             }
 
@@ -161,13 +212,19 @@ export class StripeController {
                     );
                 }
 
-                // If the order is still not in the ArrangingPayment state, log an error
+                // If the order is still not in the ArrangingPayment state, fail the
+                // request. Returning here logged the error but still answered 2xx, so
+                // Stripe recorded the event as delivered and never retried: the money
+                // was captured and the order left unsettled, with nothing but a log
+                // line to notice it by.
                 if (transitionToStateResult instanceof OrderStateTransitionError) {
                     Logger.error(
                         `Error transitioning order ${orderCode} to ArrangingPayment state: ${transitionToStateResult.message}`,
                         loggerCtx,
                     );
-                    return;
+                    throw new InternalServerError(
+                        `Stripe settlement failed for order ${orderCode}: could not transition to ArrangingPayment`,
+                    );
                 }
             }
 
@@ -186,7 +243,9 @@ export class StripeController {
                     `Error adding payment to order ${orderCode}: ${addPaymentToOrderResult.message}`,
                     loggerCtx,
                 );
-                return;
+                throw new InternalServerError(
+                    `Stripe settlement failed for order ${orderCode}: ${addPaymentToOrderResult.message}`,
+                );
             }
 
             // The payment intent ID is added to the order only if we can reach this point.
@@ -194,7 +253,8 @@ export class StripeController {
                 `Stripe payment intent id ${paymentIntent.id} added to order ${orderCode}`,
                 loggerCtx,
             );
-        });
+            })
+            .finally(releaseSettlementLock);
 
         // Send the response status only if we didn't sent anything yet.
         if (!response.headersSent) {
@@ -228,5 +288,30 @@ export class StripeController {
         }
 
         return method;
+    }
+
+    /**
+     * Acquires the per-order settlement mutex, serializing overlapping
+     * webhook deliveries within this process. The returned function releases
+     * the mutex and must run once the settlement transaction settles (see
+     * the `.finally()` at the call site) so a failed delivery cannot wedge
+     * later ones. The chain entry is removed once it drains, so the map does
+     * not grow over time.
+     */
+    private async acquireOrderSettlementLock(orderCode: string): Promise<() => void> {
+        const previous = this.settlementLocks.get(orderCode) ?? Promise.resolve();
+        let release: () => void = () => undefined;
+        const current = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        const mine = previous.then(() => current);
+        this.settlementLocks.set(orderCode, mine);
+        await previous;
+        return () => {
+            release();
+            if (this.settlementLocks.get(orderCode) === mine) {
+                this.settlementLocks.delete(orderCode);
+            }
+        };
     }
 }

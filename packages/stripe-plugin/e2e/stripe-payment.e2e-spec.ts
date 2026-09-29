@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
-import { Customer, EntityHydrator, mergeConfig, TransactionalConnection } from '@vendure/core';
+import { Customer, EntityHydrator, mergeConfig, OrderService, TransactionalConnection } from '@vendure/core';
 import {
     createProductDocument,
     createProductVariantsDocument,
@@ -16,7 +16,7 @@ import nock from 'nock';
 import fetch from 'node-fetch';
 import path from 'path';
 import { Stripe } from 'stripe';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
@@ -27,6 +27,7 @@ import {
     createChannelDocument,
     createPaymentMethodDocument,
     getCustomerListDocument,
+    getOrderPaymentsDocument,
 } from './graphql/admin-definitions';
 import { ResultOf } from './graphql/graphql-admin';
 import { FragmentOf } from './graphql/graphql-shop';
@@ -512,6 +513,181 @@ describe('Stripe payments', () => {
 
         expect(result.status).toEqual(400);
         expect(await result.text()).toContain('Error verifying Stripe webhook signature');
+    });
+
+    it('Should not add a second Payment when the same event is redelivered', async () => {
+        // Stripe retries on its own schedule after a slow or failed response, and an
+        // endpoint can be replayed, so the settled event above can arrive again. This
+        // replays it byte-for-byte: same PaymentIntent, same signature.
+        const MOCKED_WEBHOOK_PAYLOAD = {
+            id: 'evt_0',
+            object: 'event',
+            api_version: '2022-11-15',
+            data: {
+                object: {
+                    id: 'pi_0',
+                    currency: 'usd',
+                    metadata: {
+                        orderCode: order.code,
+                        orderId: parseInt(order.id.replace('T_', ''), 10),
+                        channelToken: E2E_DEFAULT_CHANNEL_TOKEN,
+                    },
+                    amount_received: order.totalWithTax,
+                    status: 'succeeded',
+                },
+            },
+            livemode: false,
+            pending_webhooks: 1,
+            request: {
+                id: 'req_0',
+                idempotency_key: '00000000-0000-0000-0000-000000000000',
+            },
+            type: 'payment_intent.succeeded',
+        };
+
+        const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
+        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const header = stripeWebhooks.generateTestHeaderString({
+            payload: payloadString,
+            secret: 'test-signing-secret',
+        });
+
+        const result = await fetch(`http://localhost:${serverPort}/payments/stripe`, {
+            method: 'post',
+            body: payloadString,
+            headers: { 'Content-Type': 'application/json', 'Stripe-Signature': header },
+        });
+
+        // A redelivery is not an error: Stripe must be told the event was handled,
+        // otherwise it keeps retrying an event that is already settled.
+        expect(result.status).toEqual(200);
+
+        const { order: orderWithPayments } = await adminClient.query(getOrderPaymentsDocument, {
+            id: order.id,
+        });
+        const paymentsForIntent = orderWithPayments!.payments!.filter(
+            payment => payment.transactionId === 'pi_0',
+        );
+        expect(paymentsForIntent.length).toEqual(1);
+    });
+
+    it('Should settle only once when the same event is delivered concurrently', async () => {
+        // Overlapping deliveries of the same event: the second request must
+        // behave like a sequential replay (200, no second payment) even when
+        // the first settlement is still in flight.
+        //
+        // The overlap is forced deterministically: the first settlement is
+        // held at addPaymentToOrder (past its idempotency check) while the
+        // second delivery runs. Plain concurrent requests cannot overlap on
+        // sqljs — every query runs synchronously in-process, so the first
+        // request always completes before the second starts.
+        // customers[0]'s earlier order settled above, so this starts a new
+        // active order.
+        await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
+        const { addItemToOrder: concurrentOrder } = await shopClient.query(addItemToOrderDocument, {
+            productVariantId: 'T_1',
+            quantity: 1,
+        });
+        orderGuard.assertSuccess(concurrentOrder);
+        await setShipping(shopClient);
+
+        const MOCKED_WEBHOOK_PAYLOAD = {
+            id: 'evt_concurrent',
+            object: 'event',
+            api_version: '2022-11-15',
+            data: {
+                object: {
+                    id: 'pi_concurrent',
+                    currency: 'usd',
+                    metadata: {
+                        orderCode: concurrentOrder.code,
+                        orderId: parseInt(concurrentOrder.id.replace('T_', ''), 10),
+                        channelToken: E2E_DEFAULT_CHANNEL_TOKEN,
+                    },
+                    amount_received: concurrentOrder.totalWithTax,
+                    status: 'succeeded',
+                },
+            },
+            livemode: false,
+            pending_webhooks: 1,
+            request: {
+                id: 'req_concurrent',
+                idempotency_key: '00000000-0000-0000-0000-000000000000',
+            },
+            type: 'payment_intent.succeeded',
+        };
+
+        const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
+        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const postWebhook = () => {
+            // Each delivery carries its own signature, as Stripe signs every
+            // delivery attempt separately.
+            const header = stripeWebhooks.generateTestHeaderString({
+                payload: payloadString,
+                secret: 'test-signing-secret',
+            });
+            return fetch(`http://localhost:${serverPort}/payments/stripe`, {
+                method: 'post',
+                body: payloadString,
+                headers: { 'Content-Type': 'application/json', 'Stripe-Signature': header },
+            });
+        };
+
+        // new Promise executor (not Promise.withResolvers): the repo still
+        // supports Node 20, which lacks withResolvers.
+        const deferred = () => {
+            let resolve!: () => void;
+            const promise = new Promise<void>(r => {
+                resolve = r;
+            });
+            return { promise, resolve };
+        };
+        const firstReached = deferred();
+        const firstGate = deferred();
+        const secondGate = deferred();
+
+        const orderService = server.app.get(OrderService);
+        const originalAddPayment = orderService.addPaymentToOrder.bind(orderService);
+        const addPaymentSpy = vi
+            .spyOn(orderService, 'addPaymentToOrder')
+            .mockImplementationOnce(async (...args) => {
+                firstReached.resolve();
+                await firstGate.promise;
+                return originalAddPayment(...args);
+            })
+            .mockImplementationOnce(async (...args) => {
+                await secondGate.promise;
+                return originalAddPayment(...args);
+            });
+
+        try {
+            const firstDelivery = postWebhook();
+            // The first settlement is now in flight, past its idempotency
+            // check: hold it there while the second delivery overlaps it.
+            await firstReached.promise;
+            const secondDelivery = postWebhook();
+            // Let the overlap happen: without serialization the second
+            // delivery runs its own check (seeing no payment yet) and reaches
+            // addPaymentToOrder too; with serialization it waits outside.
+            await new Promise(r => setTimeout(r, 250));
+            firstGate.resolve();
+            const firstResult = await firstDelivery;
+            secondGate.resolve();
+            const secondResult = await secondDelivery;
+
+            expect(firstResult.status).toEqual(200);
+            expect(secondResult.status).toEqual(200);
+
+            const { order: orderWithPayments } = await adminClient.query(getOrderPaymentsDocument, {
+                id: concurrentOrder.id,
+            });
+            const paymentsForIntent = orderWithPayments!.payments!.filter(
+                payment => payment.transactionId === 'pi_concurrent',
+            );
+            expect(paymentsForIntent.length).toEqual(1);
+        } finally {
+            addPaymentSpy.mockRestore();
+        }
     });
 
     // https://github.com/vendurehq/vendure/issues/3249
