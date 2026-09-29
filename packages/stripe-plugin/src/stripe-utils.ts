@@ -27,7 +27,7 @@ export function getAmountFromStripeMinorUnits(order: Order, stripeAmount: number
     return currencyHasFractionPart(order.currencyCode) ? stripeAmount : stripeAmount * 100;
 }
 
-function currencyHasFractionPart(currencyCode: CurrencyCode): boolean {
+export function currencyHasFractionPart(currencyCode: CurrencyCode): boolean {
     const parts = new Intl.NumberFormat(undefined, {
         style: 'currency',
         currency: currencyCode,
