@@ -57,6 +57,49 @@ export interface ElasticsearchOptions {
     adapter: () => SearchClientAdapter;
     /**
      * @description
+     * Controls whether a stock change enqueues a search index update job. This covers both a
+     * `StockMovementEvent` (an order-driven sale or allocation) and a `ProductVariantEvent` whose
+     * admin update touched only stock-level fields.
+     *
+     * With `'always'` (the historic behaviour) every stock change enqueues an update. With
+     * `'onStockStatusChange'` the plugin checks, before creating a job, whether the change would
+     * flip a variant's `inStock` or its product's `productInStock`, and skips the job when it would
+     * not. This avoids the queue write, the poll wait and the worker cycle for stock changes that
+     * cannot affect search results (for example a 50 to 49 change that leaves the item in stock).
+     *
+     * This check reads only the built-in stock booleans, so it is applied only when neither
+     * `customProductMappings` nor `customProductVariantMappings` are configured. When either is set,
+     * a custom field could derive from stock levels and change without an `inStock` flip, so the
+     * plugin automatically falls back to `'always'` to stay correct. Any evaluation failure also
+     * falls back to enqueuing.
+     *
+     * It is a pre-enqueue optimisation only, complementary to
+     * {@link ElasticsearchOptions.incrementalIndexUpdates}, which governs the write itself.
+     *
+     * @default 'always'
+     * @since 2.2.0
+     */
+    reindexOnStockMovement?: 'always' | 'onStockStatusChange';
+    /**
+     * @description
+     * Opt-in. When `true`, an incremental product update reads the product's currently indexed
+     * documents, compares them field-for-field against the freshly built documents, and writes only
+     * what actually changed: it upserts the documents that differ or are new, deletes the documents
+     * that no longer exist, and leaves the rest untouched. When nothing changed it writes nothing.
+     *
+     * This replaces the default delete-then-recreate write, during which a product briefly drops out
+     * of search results, and it avoids redundant writes from any trigger. Because it compares the
+     * whole document, it is correct for any mapping configuration. A full reindex still writes every
+     * document. Products too large to diff safely fall back to the delete-then-recreate path.
+     *
+     * When `false` (the default) the historic delete-then-recreate behaviour is used unchanged.
+     *
+     * @default false
+     * @since 2.2.0
+     */
+    incrementalIndexUpdates?: boolean;
+    /**
+     * @description
      * Maximum amount of attempts made to connect to the search server on
      * startup.
      *
@@ -730,6 +773,8 @@ const ADAPTER_PLACEHOLDER: () => SearchClientAdapter = () => ({}) as unknown as 
 
 export const defaultOptions: ElasticsearchRuntimeOptions = {
     adapter: ADAPTER_PLACEHOLDER,
+    reindexOnStockMovement: 'always',
+    incrementalIndexUpdates: false,
     connectionAttempts: 10,
     connectionAttemptInterval: 5000,
     indexPrefix: 'vendure-',
