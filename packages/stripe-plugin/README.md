@@ -6,7 +6,8 @@ Plugin to enable payments through [Stripe](https://stripe.com/docs) via the Paym
 
 1. You will need to create a Stripe account and get your secret key in the dashboard.
 2. Create a webhook endpoint in the Stripe dashboard (Developers -> Webhooks, "Add an endpoint") which listens to the `payment_intent.succeeded`
-and `payment_intent.payment_failed` events. The URL should be `https://my-server.com/payments/stripe`, where
+and `payment_intent.payment_failed` events (if you use manual capture, also add `payment_intent.amount_capturable_updated`; see the
+_manual capture_ section below). The URL should be `https://my-server.com/payments/stripe`, where
 `my-server.com` is the host of your Vendure server. *Note:* for local development, you'll need to use
 the Stripe CLI to test your webhook locally. See the _local development_ section below.
 3. Get the signing secret for the newly created webhook.
@@ -125,6 +126,50 @@ in the storefront. As in the code above, the customer will be redirected to `/ch
 
 > **Note:** A full working storefront example of the Stripe integration can be found in the
 > [Remix Starter repo](https://github.com/vendurehq/storefront-remix-starter/tree/master/app/components/checkout/stripe)
+
+## Manual capture (authorize then capture)
+
+By default the plugin captures funds as soon as the customer confirms payment (`captureMethod: 'automatic'`).
+On high demand stock this can create a race: between the customer paying and the webhook completing, the
+item can sell out, leaving the customer charged for an order that cannot be fulfilled and requiring a
+manual refund.
+
+Setting `captureMethod: 'manual'` uses Stripe's
+[separate authorization and capture](https://docs.stripe.com/payments/place-a-hold-on-a-payment-method)
+flow to close that gap. It is opt-in and fully backwards compatible; the default `'automatic'` behaviour
+is unchanged.
+
+```ts
+StripePlugin.init({
+  captureMethod: 'manual',
+});
+```
+
+With manual capture:
+
+1. Confirming the payment only places a hold on the funds (the PaymentIntent moves to `requires_capture`).
+2. When the plugin receives the `payment_intent.amount_capturable_updated` webhook it transitions the
+   order to `ArrangingPayment`. The default order process re-checks stock at this transition, respecting
+   your backorder settings (`arrangingPaymentRequiresStock` and each variant's saleable stock), so an
+   item that sold out during checkout blocks the transition.
+3. If the transition succeeds, the plugin adds an `Authorized` payment (which allocates stock) and then
+   captures the held funds, settling the order.
+4. If the order cannot be arranged, the plugin voids the authorization and releases the hold. The
+   customer is never charged, so no refund is required.
+
+**Webhook events:** manual capture also requires the `payment_intent.amount_capturable_updated` event.
+Add it to your Stripe webhook endpoint alongside `payment_intent.succeeded` and
+`payment_intent.payment_failed`.
+
+**Payment method support:** authorize-then-capture is supported by cards and several other methods, but
+not all (for example bank debits). Setting `captureMethod: 'manual'` restricts the PaymentIntent to
+eligible methods. See the Stripe documentation linked above for the current list.
+
+**Reliability:** the webhook handler is idempotent (a redelivered event for an already recorded payment
+is skipped) and returns a `5xx` on an unexpected/transient error so Stripe redelivers the event, rather
+than silently dropping it. A deterministic outcome, such as the item having sold out, is handled once
+(the hold is voided) and acknowledged with a `2xx`. Outgoing calls to Stripe (authorize, capture, void)
+use the SDK's idempotent network retries.
 
 ## Local Development
 

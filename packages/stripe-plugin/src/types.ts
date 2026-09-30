@@ -39,6 +39,29 @@ export interface StripePluginOptions {
 
     /**
      * @description
+     * Controls how the PaymentIntent captures funds.
+     *
+     * `'automatic'` (the default) charges the card as soon as the customer confirms payment, which
+     * is the plugin's historic behaviour.
+     *
+     * `'manual'` uses Stripe's separate authorization and capture flow. Confirming the payment only
+     * places a hold on the funds (PaymentIntent status `requires_capture`). The plugin then adds an
+     * `Authorized` payment to the order so Vendure can allocate stock, and captures the funds only
+     * once the order safely reaches `PaymentAuthorized`. If the order cannot be arranged (for example
+     * the item sold out during checkout), the authorization is voided instead of charged, so the
+     * customer is never charged for an order that cannot be fulfilled.
+     *
+     * Manual capture requires the `payment_intent.amount_capturable_updated` webhook event to be
+     * enabled, and only applies to payment methods that support authorize-then-capture (cards and
+     * several others). See the plugin README for details.
+     *
+     * @default 'automatic'
+     * @since 3.2.0
+     */
+    captureMethod?: 'automatic' | 'manual';
+
+    /**
+     * @description
      * Attach extra metadata to Stripe payment intent creation call.
      *
      * @example
@@ -98,6 +121,10 @@ export interface StripePluginOptions {
      *   ],
      * };
      * ```
+     *
+     * Note: a `capture_method` returned here is ignored. The plugin's `captureMethod` option is
+     * authoritative, since the payment handler and webhook flow depend on it, so the intent is
+     * always created with the configured mode and a conflicting value is logged and dropped.
      *
      * @since 2.1.0
      *

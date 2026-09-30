@@ -50,3 +50,28 @@ export function isExpectedVendureStripeEventMetadata(metadata: Stripe.Metadata):
 } {
     return !!metadata.channelToken && !!metadata.orderCode && !!metadata.orderId;
 }
+
+/**
+ * @description
+ * Whether a Stripe error is temporary, so the same request can succeed later: a network failure,
+ * a Stripe-side error (5xx) or rate limiting. The SDK has already retried these by the time they
+ * surface here, so the caller should let the operation fail in a way that can be retried later
+ * rather than record a permanent failure.
+ */
+export function isRetryableStripeError(e: unknown): boolean {
+    return (
+        e instanceof Stripe.errors.StripeConnectionError ||
+        e instanceof Stripe.errors.StripeAPIError ||
+        e instanceof Stripe.errors.StripeRateLimitError
+    );
+}
+
+/**
+ * @description
+ * Whether a Stripe error means the PaymentIntent is not in a state that allows the requested action,
+ * for example capturing an intent that was already captured or cancelling one that was already
+ * cancelled.
+ */
+export function isUnexpectedIntentStateError(e: unknown): boolean {
+    return e instanceof Stripe.errors.StripeError && e.code === 'payment_intent_unexpected_state';
+}
