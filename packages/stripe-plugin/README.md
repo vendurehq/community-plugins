@@ -36,6 +36,23 @@ the Stripe CLI to test your webhook locally. See the _local development_ section
 2. Create a new PaymentMethod in the Admin UI, and select "Stripe payments" as the handler.
 3. Set the webhook secret and API key in the PaymentMethod form.
 
+### Rotating the API key or webhook secret
+
+The plugin reads `apiKey` and `webhookSecret` from the enabled Stripe PaymentMethod's handler
+arguments, not from the plugin options and not from environment variables. Rotating the values in
+the Stripe Dashboard and updating an environment variable or a secret store therefore changes
+nothing on its own: the plugin keeps authenticating with the previous values until the
+PaymentMethod is updated, and checkout fails with a provider error that names the old, masked key.
+
+After rolling a key or a webhook signing secret:
+
+1. Go to Settings -> Payment methods, open the Stripe method used by the channel, and replace
+   `apiKey` and/or `webhookSecret`. The Admin API equivalent is `updatePaymentMethod`.
+2. Repeat for every channel that has its own Stripe PaymentMethod: the credentials are read per
+   payment method.
+3. Confirm webhook delivery again. A rolled signing secret makes every delivery fail verification
+   until the new value is saved.
+
 ## Storefront Usage
 
 The plugin is designed to work with the [Custom payment flow](https://stripe.com/docs/payments/accept-a-payment?platform=web&ui=elements).
