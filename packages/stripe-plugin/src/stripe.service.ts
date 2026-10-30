@@ -293,10 +293,14 @@ export class StripeService {
         amount: number,
     ): Promise<Stripe.Response<Stripe.Refund>> {
         const stripe = await this.getStripeClient(ctx, order);
-        return stripe.refunds.create({
-            payment_intent: payment.transactionId,
-            amount,
-        });
+        const requestOptions = await this.resolveRequestOptions(ctx, order);
+        return stripe.refunds.create(
+            {
+                payment_intent: payment.transactionId,
+                amount,
+            },
+            requestOptions,
+        );
     }
 
     /**
