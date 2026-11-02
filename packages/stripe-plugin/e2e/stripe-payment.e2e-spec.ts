@@ -859,18 +859,27 @@ describe('Stripe payments', () => {
             expect(payload?.['metadata[vendureRefundReason]']).toBeUndefined();
         });
 
-        it('sends a deterministic idempotency key derived from payment intent + amount', async () => {
-            let capturedKey: string | string[] | undefined;
+        // Refunds are repeatable: two partial refunds of the same amount on the same PaymentIntent
+        // are distinct refunds. A key derived from (payment intent, amount) would make Stripe replay
+        // the first response for the second call, so no money would move for it while Vendure
+        // records it as settled.
+        it('does not reuse an idempotency key across two same-amount refunds on one payment intent', async () => {
+            const capturedKeys: Array<string | string[] | undefined> = [];
             nock('https://api.stripe.com/')
                 .post('/v1/refunds')
+                .times(2)
                 .reply(function reply() {
-                    capturedKey = this.req.headers['idempotency-key'];
-                    return [200, { id: 're_idem', status: 'succeeded' }];
+                    capturedKeys.push(this.req.headers['idempotency-key']);
+                    return [200, { id: `re_idem_${capturedKeys.length}`, status: 'succeeded' }];
                 });
             adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
             shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
-            await callCreateRefund('requested_by_customer');
-            expect(capturedKey).toBe(`refund_${paymentIntentId}_${refundAmount}`);
+            const first = await callCreateRefund('requested_by_customer');
+            const second = await callCreateRefund('requested_by_customer');
+            expect(first.id).toBe('re_idem_1');
+            expect(second.id).toBe('re_idem_2');
+            expect(capturedKeys).toHaveLength(2);
+            expect(capturedKeys[0]).not.toBe(capturedKeys[1]);
         });
     });
 });

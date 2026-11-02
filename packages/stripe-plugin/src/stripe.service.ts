@@ -314,9 +314,10 @@ export class StripeService {
             ...(structuredReason ? { reason: structuredReason } : {}),
             ...(reason && !structuredReason ? { metadata: { vendureRefundReason: reason } } : {}),
         };
-        return stripe.refunds.create(params, {
-            idempotencyKey: `refund_${payment.transactionId}_${amount}`,
-        });
+        // No idempotency key of our own: refunds are repeatable, so (payment intent, amount) does not
+        // identify one refund, and a colliding key makes Stripe replay an earlier refund instead of
+        // creating a new one. The SDK attaches a per-call key to its own network retries.
+        return stripe.refunds.create(params);
     }
 
     /**

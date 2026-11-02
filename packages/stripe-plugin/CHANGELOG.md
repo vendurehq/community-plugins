@@ -57,9 +57,6 @@ Major modernization release. Brings the plugin onto the current Stripe SDK and a
   one of Stripe's accepted enum values (`duplicate`, `fraudulent`, `requested_by_customer`), it is
   passed as the structured `reason` field. Any other reason string is stored on the Stripe refund's
   metadata as `vendureRefundReason` so it isn't lost.
-- **Refund creation is now idempotent.** `refunds.create` is called with an idempotency key derived
-  from the payment intent ID and refund amount, matching the parity already in place for payment
-  intent creation.
 
 ### Development
 
