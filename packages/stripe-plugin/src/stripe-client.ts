@@ -32,6 +32,10 @@ export class VendureStripeClient extends Stripe {
         super(apiKey, {
             apiVersion,
             httpClient: httpClient ?? Stripe.createFetchHttpClient(),
+            // Retry requests that fail due to a network error or a transient Stripe error (5xx/429).
+            // The SDK attaches idempotency keys to the retries, so a retried capture, cancel or
+            // refund never double-acts on the PaymentIntent.
+            maxNetworkRetries: 2,
         });
     }
 }

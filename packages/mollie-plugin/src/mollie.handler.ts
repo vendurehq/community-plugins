@@ -1,6 +1,7 @@
 import createMollieClient, { PaymentStatus, RefundStatus } from '@mollie/api-client';
 import { LanguageCode } from '@vendure/common/lib/generated-types';
 import {
+    ConfigService,
     CreatePaymentErrorResult,
     CreatePaymentResult,
     CreateRefundResult,
@@ -10,11 +11,12 @@ import {
 } from '@vendure/core';
 
 import { loggerCtx } from './constants';
-import { toAmount } from './mollie.helpers';
+import { getMoneyPrecision, toAmount } from './mollie.helpers';
 import { MollieService } from './mollie.service';
 import { MolliePaymentMetadata } from './types';
 
 let mollieService: MollieService;
+let configService: ConfigService;
 export const molliePaymentHandler = new PaymentMethodHandler({
     code: 'mollie-payment-handler',
     description: [
@@ -43,6 +45,7 @@ export const molliePaymentHandler = new PaymentMethodHandler({
     },
     init(injector) {
         mollieService = injector.get(MollieService);
+        configService = injector.get(ConfigService);
     },
     createPayment: (
         ctx,
@@ -120,7 +123,7 @@ export const molliePaymentHandler = new PaymentMethodHandler({
         const refund = await mollieClient.paymentRefunds.create({
             paymentId: molliePayment.id,
             description: input.reason,
-            amount: toAmount(amount, order.currencyCode),
+            amount: toAmount(amount, order.currencyCode, getMoneyPrecision(configService)),
         });
         if (refund.status === RefundStatus.failed) {
             Logger.error(

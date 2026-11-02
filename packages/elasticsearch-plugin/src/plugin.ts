@@ -4,7 +4,6 @@ import {
     BUFFER_SEARCH_INDEX_UPDATES,
     CollectionModificationEvent,
     EventBus,
-    HealthCheckRegistryService,
     ID,
     idsAreEqual,
     Logger,
@@ -30,7 +29,6 @@ import {
     ShopElasticSearchResolver,
 } from './api/elasticsearch-resolver';
 import { ELASTIC_SEARCH_OPTIONS, loggerCtx } from './constants';
-import { ElasticsearchHealthIndicator } from './elasticsearch.health';
 import { ElasticsearchService } from './elasticsearch.service';
 import { ElasticsearchIndexService } from './indexing/elasticsearch-index.service';
 import { ElasticsearchIndexerController } from './indexing/indexer.controller';
@@ -75,7 +73,6 @@ function getCustomResolvers(options: ElasticsearchRuntimeOptions) {
     providers: [
         ElasticsearchIndexService,
         ElasticsearchService,
-        ElasticsearchHealthIndicator,
         ElasticsearchIndexerController,
         SearchJobBufferService,
         { provide: ELASTIC_SEARCH_OPTIONS, useFactory: () => ElasticsearchPlugin.options },
@@ -112,8 +109,6 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
         private eventBus: EventBus,
         private elasticsearchService: ElasticsearchService,
         private elasticsearchIndexService: ElasticsearchIndexService,
-        private elasticsearchHealthIndicator: ElasticsearchHealthIndicator,
-        private healthCheckRegistryService: HealthCheckRegistryService,
     ) {}
 
     /**

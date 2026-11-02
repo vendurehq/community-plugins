@@ -3,12 +3,26 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2.0.1 (2026-10-28)
+
+### Bug Fixes
+
+* **elasticsearch-plugin:** log index failures once, at the caller
+* **elasticsearch-plugin:** avoid query strategy relation load failure
+* **elasticsearch-plugin:** don't strand temp index or abort bootstrap on create failure
+* **elasticsearch-plugin:** load indexing relations with the query strategy
+* **elasticsearch-plugin:** remove dead health check code ([#42](https://github.com/vendurehq/community-plugins/pull/42))
+
 ## 2.0.0
 
 ### Features
 
 * **elasticsearch-plugin:** introduce pluggable `SearchClientAdapter` interface so the plugin can be backed by either Elasticsearch or OpenSearch. Ship two first-party adapters: `ElasticsearchAdapter` (via `createElasticsearchAdapter`) and `OpenSearchAdapter` (via `createOpenSearchAdapter`). `@elastic/elasticsearch` and `@opensearch-project/opensearch` are both declared as optional peer dependencies — install only the one you use.
 * **elasticsearch-plugin:** expose `adapter.getRawClient()` escape hatch for advanced queries that are not on the `SearchClientAdapter` surface.
+
+### Bug Fixes
+
+* **elasticsearch-plugin:** filter stock level on enabled variants only ([#35](https://github.com/vendurehq/community-plugins/pull/35))
 
 ### BREAKING CHANGES
 

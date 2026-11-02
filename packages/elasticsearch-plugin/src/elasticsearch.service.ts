@@ -21,7 +21,7 @@ import equal from 'fast-deep-equal/es6';
 import { buildElasticBody } from './build-elastic-body';
 import { ELASTIC_SEARCH_OPTIONS, loggerCtx, VARIANT_INDEX_NAME } from './constants';
 import { ElasticsearchIndexService } from './indexing/elasticsearch-index.service';
-import { createIndices } from './indexing/indexing-utils';
+import { createIndices, describeSearchClientError } from './indexing/indexing-utils';
 import { ElasticsearchOptions, ElasticsearchRuntimeOptions } from './options';
 import {
     CustomMapping,
@@ -112,95 +112,136 @@ export class ElasticsearchService implements OnModuleInit, OnModuleDestroy {
 
             if (!result.body) {
                 Logger.verbose(`Index "${index}" does not exist. Creating...`, loggerCtx);
-                await createIndices(
-                    this.adapter,
-                    indexPrefix,
-                    this.options.indexSettings,
-                    this.options.indexMappingProperties,
-                );
+                try {
+                    await createIndices(
+                        this.adapter,
+                        indexPrefix,
+                        this.options.indexSettings,
+                        this.options.indexMappingProperties,
+                    );
+                } catch (e: any) {
+                    // `createIndices()` rethrows, but failing to create the live index must not
+                    // abort application bootstrap — that has always been the behaviour here, and
+                    // crash-looping every instance is a far worse outcome than starting up
+                    // without a search index. The index can be created later via a reindex.
+                    Logger.error(
+                        `Could not create index "${index}": ${describeSearchClientError(e)}`,
+                        loggerCtx,
+                    );
+                }
             } else {
                 Logger.verbose(`Index "${index}" exists`, loggerCtx);
-
-                const existingIndexSettingsResult = await this.adapter.indices.getSettings({ index });
-                let existingIndexSettings;
-
-                if (existingIndexSettingsResult.body) {
-                    existingIndexSettings = (existingIndexSettingsResult.body)[
-                        Object.keys(existingIndexSettingsResult.body)[0]
-                    ].settings.index;
-                }
 
                 const tempName = new Date().getTime();
                 const nameSalt = Math.random().toString(36).substring(7);
                 const tempPrefix = 'temp-' + `${tempName}-${nameSalt}-`;
                 const tempIndex = tempPrefix + indexName;
 
-                await createIndices(
-                    this.adapter,
-                    tempPrefix,
-                    this.options.indexSettings,
-                    this.options.indexMappingProperties,
-                    false,
-                );
-                const tempIndexSettingsResult = await this.adapter.indices.getSettings({
-                    index: tempIndex,
-                });
-                const tempIndexSettings = (tempIndexSettingsResult.body)[tempIndex]
-                    ?.settings?.index;
+                // Everything below is purely diagnostic: it builds a throwaway index from the
+                // current config and compares it against the live one to warn about drift. It
+                // must never be able to abort bootstrap, and the throwaway index must always be
+                // cleaned up — otherwise a failure here strands it in the cluster forever.
+                try {
+                    const existingIndexSettingsResult = await this.adapter.indices.getSettings({ index });
+                    let existingIndexSettings;
 
-                const indexParamsToExclude = [
-                    'routing',
-                    'number_of_shards',
-                    'provided_name',
-                    'creation_date',
-                    'number_of_replicas',
-                    'uuid',
-                    'version',
-                ];
-                for (const param of indexParamsToExclude) {
-                    if (tempIndexSettings) {
-                        delete tempIndexSettings[param];
+                    if (existingIndexSettingsResult.body) {
+                        existingIndexSettings = (existingIndexSettingsResult.body)[
+                            Object.keys(existingIndexSettingsResult.body)[0]
+                        ].settings.index;
                     }
-                    if (existingIndexSettings) {
-                        delete existingIndexSettings[param];
-                    }
-                }
-                if (
-                    tempIndexSettings &&
-                    existingIndexSettings &&
-                    !equal(tempIndexSettings, existingIndexSettings)
-                )
-                    Logger.warn(
-                        `Index "${index}" settings differs from index setting in vendure config! Consider re-indexing the data.`,
-                        loggerCtx,
+
+                    await createIndices(
+                        this.adapter,
+                        tempPrefix,
+                        this.options.indexSettings,
+                        this.options.indexMappingProperties,
+                        false,
                     );
-                else {
-                    const existingIndexMappingsResult = await this.adapter.indices.getMapping({ index });
-                    const existingIndexMappings =
-                        (existingIndexMappingsResult.body)[
-                            Object.keys(existingIndexMappingsResult.body)[0]
-                        ].mappings;
-
-                    const tempIndexMappingsResult = await this.adapter.indices.getMapping({
+                    const tempIndexSettingsResult = await this.adapter.indices.getSettings({
                         index: tempIndex,
                     });
-                    const tempIndexMappings = (tempIndexMappingsResult.body)[
-                        tempIndex
-                    ].mappings;
-                    if (!equal(tempIndexMappings, existingIndexMappings))
+                    const tempIndexSettings = (tempIndexSettingsResult.body)[tempIndex]
+                        ?.settings?.index;
+
+                    const indexParamsToExclude = [
+                        'routing',
+                        'number_of_shards',
+                        'provided_name',
+                        'creation_date',
+                        'number_of_replicas',
+                        'uuid',
+                        'version',
+                    ];
+                    for (const param of indexParamsToExclude) {
+                        if (tempIndexSettings) {
+                            delete tempIndexSettings[param];
+                        }
+                        if (existingIndexSettings) {
+                            delete existingIndexSettings[param];
+                        }
+                    }
+                    if (
+                        tempIndexSettings &&
+                        existingIndexSettings &&
+                        !equal(tempIndexSettings, existingIndexSettings)
+                    )
                         Logger.warn(
-                            `Index "${index}" mapping differs from index mapping in vendure config! Consider re-indexing the data.`,
+                            `Index "${index}" settings differs from index setting in vendure config! Consider re-indexing the data.`,
                             loggerCtx,
                         );
-                }
+                    else {
+                        const existingIndexMappingsResult = await this.adapter.indices.getMapping({ index });
+                        const existingIndexMappings =
+                            (existingIndexMappingsResult.body)[
+                                Object.keys(existingIndexMappingsResult.body)[0]
+                            ].mappings;
 
-                await this.adapter.indices.delete({
-                    index: tempPrefix + 'variants',
-                });
+                        const tempIndexMappingsResult = await this.adapter.indices.getMapping({
+                            index: tempIndex,
+                        });
+                        const tempIndexMappings = (tempIndexMappingsResult.body)[
+                            tempIndex
+                        ].mappings;
+                        if (!equal(tempIndexMappings, existingIndexMappings))
+                            Logger.warn(
+                                `Index "${index}" mapping differs from index mapping in vendure config! Consider re-indexing the data.`,
+                                loggerCtx,
+                            );
+                    }
+                } catch (e: any) {
+                    Logger.warn(
+                        `Could not compare index "${index}" with the current Vendure config: ${describeSearchClientError(
+                            e,
+                        )}`,
+                        loggerCtx,
+                    );
+                } finally {
+                    await this.deleteTempIndex(tempIndex);
+                }
             }
         };
 
         await createIndex(VARIANT_INDEX_NAME);
+    }
+
+    /**
+     * Removes a temporary index created for the settings/mappings drift check.
+     *
+     * Runs from a `finally` block, so it must swallow its own errors: throwing here
+     * would mask whatever failure actually brought us out of the `try`. It is also
+     * called when the temp index creation itself failed, because a client-side
+     * timeout on the create request does not mean the server did not create it.
+     */
+    private async deleteTempIndex(tempIndex: string): Promise<void> {
+        try {
+            await this.adapter.indices.delete({ index: tempIndex });
+        } catch (e: any) {
+            Logger.warn(
+                `Could not delete temporary index "${tempIndex}": ${describeSearchClientError(e)}`,
+                loggerCtx,
+            );
+        }
     }
 
     /**

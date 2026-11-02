@@ -92,7 +92,7 @@
           "lastModified": "2026-03-31T14:38:46+02:00"
         }
       ],
-      "lastModified": "2026-05-06T10:08:17+02:00"
+      "lastModified": "2026-09-29T15:47:14+02:00"
     },
     {
       "title": "StellatePlugin",
@@ -129,10 +129,10 @@
           "title": "StripePluginOptions",
           "slug": "stripe-plugin-options",
           "file": "docs/reference/stripe-plugin/stripe-plugin-options.mdx",
-          "lastModified": "2026-03-31T14:38:46+02:00"
+          "lastModified": "2026-10-28T09:46:49+01:00"
         }
       ],
-      "lastModified": "2026-04-03T11:44:49+02:00"
+      "lastModified": "2026-10-28T09:46:49+01:00"
     }
   ],
   "github": {

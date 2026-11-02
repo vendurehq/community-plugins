@@ -31,6 +31,7 @@ The following environment variables are used to control how the Sentry
 integration behaves:
 
 - `SENTRY_DSN`: (required) Sentry Data Source Name
+- `SENTRY_ENVIRONMENT`: The environment name, e.g. `production` or `staging`. Read by the Sentry SDK directly
 - `SENTRY_TRACES_SAMPLE_RATE`: Number between 0 and 1
 - `SENTRY_PROFILES_SAMPLE_RATE`: Number between 0 and 1
 - `SENTRY_ENABLE_LOGS`: Boolean. Captures calls to the console API as logs in Sentry. Default `false`

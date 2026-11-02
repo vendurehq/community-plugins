@@ -10,7 +10,8 @@ Plugin to enable payments through [Stripe](https://stripe.com/docs) via the Paym
 
 1. You will need to create a Stripe account and get your secret key in the dashboard.
 2. Create a webhook endpoint in the Stripe dashboard (Developers -> Webhooks, "Add an endpoint") which listens to the `payment_intent.succeeded`
-and `payment_intent.payment_failed` events. The URL should be `https://my-server.com/payments/stripe`, where
+and `payment_intent.payment_failed` events (if you use manual capture, also add `payment_intent.amount_capturable_updated` and
+`payment_intent.canceled`; see the _manual capture_ section below). The URL should be `https://my-server.com/payments/stripe`, where
 `my-server.com` is the host of your Vendure server. *Note:* for local development, you'll need to use
 the Stripe CLI to test your webhook locally. See the _local development_ section below.
 3. Get the signing secret for the newly created webhook.
@@ -129,6 +130,80 @@ in the storefront. As in the code above, the customer will be redirected to `/ch
 
 > **Note:** A full working storefront example of the Stripe integration can be found in the
 > [Remix Starter repo](https://github.com/vendurehq/storefront-remix-starter/tree/master/app/components/checkout/stripe)
+
+## Manual capture (authorize then capture)
+
+By default the plugin captures funds as soon as the customer confirms payment (`captureMethod: 'automatic'`).
+On high demand stock this can create a race: between the customer paying and the webhook completing, the
+item can sell out, leaving the customer charged for an order that cannot be fulfilled and requiring a
+manual refund.
+
+Setting `captureMethod: 'manual'` uses Stripe's
+[separate authorization and capture](https://docs.stripe.com/payments/place-a-hold-on-a-payment-method)
+flow to close that gap. It is opt-in: the default `'automatic'` mode keeps its existing payment flow, and
+only gains the duplicate-event check and per-order lock described under _Reliability_ below.
+
+```ts
+StripePlugin.init({
+  captureMethod: 'manual',
+});
+```
+
+With manual capture:
+
+1. Confirming the payment only places a hold on the funds (the PaymentIntent moves to `requires_capture`).
+2. When the plugin receives the `payment_intent.amount_capturable_updated` webhook it transitions the
+   order to `ArrangingPayment`. The default order process re-checks stock at this transition, respecting
+   your backorder settings (`arrangingPaymentRequiresStock` and each variant's saleable stock), so an
+   item that sold out during checkout blocks the transition.
+3. If the transition succeeds, the plugin adds an `Authorized` payment. Once the payment covers the order
+   total, Vendure moves the order to `PaymentAuthorized` and allocates stock, and the plugin commits it.
+   Only then does it capture the held funds from Stripe, and it settles the payment in a second, short
+   transaction. Stripe is never called while a database transaction is open, so a capture can't succeed
+   while Vendure rolls the payment back.
+4. If the order cannot be arranged, or the authorization does not cover the order total (for example the
+   cart changed after the PaymentIntent was created and the customer confirmed the old client secret),
+   the plugin does not record the payment and voids the authorization instead. The customer is never
+   charged, so no refund is required.
+
+**Webhook events:** manual capture also requires the `payment_intent.amount_capturable_updated` and
+`payment_intent.canceled` events. Add them to your Stripe webhook endpoint alongside
+`payment_intent.succeeded` and `payment_intent.payment_failed`.
+
+**Expired authorizations:** Stripe cancels an authorization that is not captured in time (7 days for most
+card payments). The plugin then cancels the `Authorized` payment on the `payment_intent.canceled` event.
+Cancelling the payment does not release the order's stock, so the order stays in `PaymentAuthorized`
+and is logged: cancel it from the Admin UI to release the stock, or collect a new payment.
+
+**Payment method support:** authorize-then-capture is supported by cards and several other methods, but
+not all (for example bank debits). Setting `captureMethod: 'manual'` restricts the PaymentIntent to
+eligible methods. See the Stripe documentation linked above for the current list.
+
+**Reliability:** the webhook handler is idempotent (a redelivered event for an already recorded payment
+is skipped) and returns a `5xx` on an unexpected/transient error so Stripe redelivers the event, rather
+than silently dropping it. Events for the same order are processed one at a time under a row lock on the
+order. The duplicate check and the lock apply in both capture modes. A deterministic outcome, such as the
+item having sold out, is handled once (the hold is voided) and acknowledged with a `2xx`. Outgoing calls
+to Stripe (authorize, capture, void) use the SDK's idempotent network retries. The capture request
+carries no idempotency key of its own, because Stripe would return a stored error to every retry for 24
+hours. A repeated capture is refused by Stripe as already captured instead, and the plugin then reads
+the PaymentIntent's live state.
+
+The payment stays `Authorized` if the capture fails or the process stops after the funds were captured but
+before the payment was settled. A temporary Stripe error makes the webhook return a `5xx`, and the
+redelivered `payment_intent.amount_capturable_updated` event resumes the capture. The
+`payment_intent.succeeded` event settles any payment that is still `Authorized` once its PaymentIntent has
+been captured, so the two events can arrive in any order or more than once and the payment is settled
+exactly once. A capture that Stripe refuses for good is logged and the payment is left `Authorized`, so it
+can be captured or cancelled from the Admin UI.
+
+**Limits of the duplicate-hold protection:** the PaymentIntent for an order is created under an idempotency
+key made of the order code and amount, and a replacement for a cancelled intent under a key derived from
+the cancelled intent. This relies on Stripe keeping idempotency keys for 24 hours. After 24 hours, or
+after the order total changes, a new PaymentIntent is created, so a customer who still holds an older
+client secret can place a second hold. The plugin only captures a hold that covers the current order
+total and voids the others, so the customer is not charged twice, but the second hold stays on their card
+until it is voided or expires.
 
 ## Local Development
 

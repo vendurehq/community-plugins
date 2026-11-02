@@ -112,7 +112,8 @@ async function processPayment(
         },
     });
     const extractMetadataFn = pluginOptions.extractMetadata ?? defaultExtractMetadataFn;
-    const metadata = response.transaction && extractMetadataFn(response.transaction);
+    // Payment.metadata is a non-nullable column.
+    const metadata = (response.transaction && extractMetadataFn(response.transaction)) ?? {};
     if (!response.success) {
         return {
             amount,

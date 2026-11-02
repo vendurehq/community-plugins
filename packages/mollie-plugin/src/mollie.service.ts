@@ -42,7 +42,13 @@ import {
     MolliePaymentMethod,
 } from './graphql/generated-shop-types';
 import { molliePaymentHandler } from './mollie.handler';
-import { amountToCents, toAmount, toMollieAddress, toMolliePaymentLines } from './mollie.helpers';
+import {
+    amountToCents,
+    getMoneyPrecision,
+    toAmount,
+    toMollieAddress,
+    toMolliePaymentLines,
+} from './mollie.helpers';
 import { MolliePluginOptions } from './mollie.plugin';
 import { MolliePaymentMetadata } from './types';
 
@@ -218,14 +224,15 @@ export class MollieService {
                 loggerCtx,
             );
         }
+        const precision = getMoneyPrecision(this.configService);
         const paymentInput: CreatePaymentParameters = {
             description: order.code,
-            amount: toAmount(amountToPay, order.currencyCode),
+            amount: toAmount(amountToPay, order.currencyCode, precision),
             redirectUrl,
             webhookUrl: `${vendureHost}/payments/mollie/${ctx.channel.token}/${paymentMethod.id}`,
             billingAddress,
             locale: input.locale as Locale,
-            lines: toMolliePaymentLines(order, alreadyPaid),
+            lines: toMolliePaymentLines(order, alreadyPaid, precision),
             metadata: {
                 languageCode: ctx.languageCode,
                 immediateCapture,
@@ -299,10 +306,10 @@ export class MollieService {
             );
             return order;
         }
+        const paymentWithSameTransactionId = order.payments.find(
+            p => p.transactionId === molliePayment.id,
+        );
         if (order.orderPlacedAt) {
-            const paymentWithSameTransactionId = order.payments.find(
-                p => p.transactionId === molliePayment.id,
-            );
             if (!paymentWithSameTransactionId) {
                 // The order is paid for again, with another transaction ID. This means the customer paid twice
                 Logger.error(
@@ -312,16 +319,17 @@ export class MollieService {
                 return order;
             }
         }
-        if (order.state === 'Cancelled' && molliePayment.status === PaymentStatus.paid) {
+        if (
+            order.state === 'Cancelled' &&
+            molliePayment.status === PaymentStatus.paid &&
+            !paymentWithSameTransactionId
+        ) {
             Logger.error(
-                `Order '${order.code}' is 'Cancelled'', but was paid for with '${molliePayment.id}'. Payment '${
-                    molliePayment.id
-                }' should be refunded.`,
+                `Order '${order.code}' is 'Cancelled', but was paid for with '${molliePayment.id}'. Payment '${molliePayment.id}' should be refunded.`,
                 loggerCtx,
             );
             return order;
         }
-
         if (!VENDURE_STATES_THAT_REQUIRE_ACTION.includes(order.state)) {
             Logger.info(
                 `Order ${order.code} is already '${order.state}', no need for handling Mollie status '${molliePayment.status}'`,
@@ -329,7 +337,7 @@ export class MollieService {
             );
             return order;
         }
-        const amount = amountToCents(molliePayment.amount);
+        const amount = amountToCents(molliePayment.amount, getMoneyPrecision(this.configService));
         // Metadata to add to a payment
         const mollieMetadata: Omit<MolliePaymentMetadata, 'status' | 'amount'> = {
             paymentId: molliePayment.id,

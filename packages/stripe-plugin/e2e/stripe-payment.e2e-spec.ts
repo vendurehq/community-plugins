@@ -2,11 +2,13 @@
 import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
 import {
     ChannelService,
+    Customer,
     EntityHydrator,
     mergeConfig,
     OrderService,
     Payment,
     RequestContext,
+    TransactionalConnection,
 } from '@vendure/core';
 import {
     createErrorResultGuard,
@@ -287,7 +289,7 @@ describe('Stripe payments', () => {
         });
         expect(connectedAccountHeader).toEqual('acct_connected');
         expect(createStripePaymentIntent).toEqual('test-client-secret');
-        StripePlugin.options.paymentIntentCreateParams = undefined;
+        StripePlugin.options.requestOptions = undefined;
     });
 
     // https://github.com/vendurehq/vendure/issues/2412
@@ -335,6 +337,51 @@ describe('Stripe payments', () => {
             description: `Description for ${activeOrder!.customer!.emailAddress}`,
             phone: '12345',
         });
+    });
+
+    // https://github.com/vendurehq/community-plugins/issues/25
+    it('should pass requestOptions to customer list and create calls', async () => {
+        StripePlugin.options.requestOptions = () => ({
+            stripeAccount: 'acct_connected',
+        });
+
+        // Reset the cached Stripe customer id so the lookup/create path runs again.
+        const connection = server.app.get(TransactionalConnection);
+        const customerRepo = connection.rawConnection.getRepository(Customer);
+        const dbCustomer = await customerRepo.findOneByOrFail({
+            emailAddress: customers[1].emailAddress,
+        });
+        // `null` (not `undefined`) so TypeORM writes the column instead of skipping it.
+        (dbCustomer.customFields as { stripeCustomerId: string | null }).stripeCustomerId = null;
+        await customerRepo.save(dbCustomer, { reload: false });
+
+        await shopClient.asUserWithCredentials(customers[1].emailAddress, 'test');
+
+        // Both customer calls must carry the Stripe-Account header, otherwise the
+        // customer is created on the platform account while the payment intent
+        // targets the connected account ("No such customer" on intent creation).
+        const stripeAccountHeaders: string[] = [];
+        nock('https://api.stripe.com/', {
+            reqheaders: {
+                'Stripe-Account': headerValue => {
+                    stripeAccountHeaders.push(headerValue);
+                    return true;
+                },
+            },
+        })
+            .get(/\/v1\/customers.*/)
+            .reply(200, { data: [] })
+            .post('/v1/customers')
+            .reply(201, { id: 'connected-account-customer-id' });
+        nock('https://api.stripe.com/').post('/v1/payment_intents').reply(200, {
+            client_secret: 'test-client-secret',
+        });
+
+        const { createStripePaymentIntent } = await shopClient.query(createStripePaymentIntentDocument);
+        expect(stripeAccountHeaders).toEqual(['acct_connected', 'acct_connected']);
+        expect(createStripePaymentIntent).toEqual('test-client-secret');
+        StripePlugin.options.requestOptions = undefined;
+        StripePlugin.options.customerCreateParams = undefined;
     });
 
     // https://github.com/vendurehq/vendure/issues/2450
@@ -432,6 +479,53 @@ describe('Stripe payments', () => {
         expect(result.status).toEqual(200);
     });
 
+    // https://github.com/vendurehq/community-plugins/issues/45
+    it('Should reject an invalid signature without looking up the order', async () => {
+        const MOCKED_WEBHOOK_PAYLOAD = {
+            id: 'evt_untrusted',
+            object: 'event',
+            api_version: '2022-11-15',
+            data: {
+                object: {
+                    id: 'pi_untrusted',
+                    currency: 'usd',
+                    metadata: {
+                        orderCode: 'DOESNOTEXIST',
+                        orderId: 99999999,
+                        channelToken: E2E_DEFAULT_CHANNEL_TOKEN,
+                    },
+                    amount_received: 10000,
+                    status: 'succeeded',
+                },
+            },
+            livemode: false,
+            pending_webhooks: 1,
+            request: {
+                id: 'req_untrusted',
+                idempotency_key: '00000000-0000-0000-0000-000000000000',
+            },
+            type: 'payment_intent.succeeded',
+        };
+
+        const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
+        // Signed with the wrong secret: verification must fail before the
+        // (nonexistent) order is ever looked up.
+        const header = stripeWebhooks.generateTestHeaderString({
+            payload: payloadString,
+            secret: 'wrong-signing-secret',
+        });
+
+        const result = await fetch(`http://localhost:${serverPort}/payments/stripe`, {
+            method: 'post',
+            body: payloadString,
+            headers: { 'Content-Type': 'application/json', 'Stripe-Signature': header },
+        });
+
+        expect(result.status).toEqual(400);
+        expect(await result.text()).toContain('Error verifying Stripe webhook signature');
+    });
+
     // https://github.com/vendurehq/vendure/issues/3249
     it('Should skip events without expected metadata, when the plugin option is set', async () => {
         StripePlugin.options.skipPaymentIntentsWithoutExpectedMetadata = true;
@@ -474,6 +568,91 @@ describe('Stripe payments', () => {
         });
 
         expect(result.status).toEqual(200);
+    });
+
+    // https://github.com/vendurehq/community-plugins/issues/59
+    describe('events whose object has no metadata', () => {
+        // The object of a `balance.available` event is a Balance, which has no `metadata` field at all.
+        const postBalanceEvent = async (objectOverrides: Record<string, unknown>) => {
+            const MOCKED_WEBHOOK_PAYLOAD = {
+                id: 'evt_balance',
+                object: 'event',
+                api_version: '2022-11-15',
+                data: {
+                    object: {
+                        object: 'balance',
+                        available: [{ amount: 0, currency: 'usd' }],
+                        livemode: false,
+                        pending: [{ amount: 0, currency: 'usd' }],
+                        ...objectOverrides,
+                    },
+                },
+                livemode: false,
+                pending_webhooks: 1,
+                request: {
+                    id: null,
+                    idempotency_key: null,
+                },
+                type: 'balance.available',
+            };
+
+            const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
+            const stripeWebhooks = new Stripe('test-api-secret').webhooks;
+            const header = stripeWebhooks.generateTestHeaderString({
+                payload: payloadString,
+                secret: 'test-signing-secret',
+            });
+
+            return fetch(`http://localhost:${serverPort}/payments/stripe`, {
+                method: 'post',
+                body: payloadString,
+                headers: { 'Content-Type': 'application/json', 'Stripe-Signature': header },
+            });
+        };
+
+        const withSkipOption = async (skip: boolean, run: () => Promise<void>) => {
+            const previous = StripePlugin.options.skipPaymentIntentsWithoutExpectedMetadata;
+            StripePlugin.options.skipPaymentIntentsWithoutExpectedMetadata = skip;
+            try {
+                await run();
+            } finally {
+                StripePlugin.options.skipPaymentIntentsWithoutExpectedMetadata = previous;
+            }
+        };
+
+        it('Should skip events without a metadata field, when the plugin option is set', async () => {
+            await withSkipOption(true, async () => {
+                const result = await postBalanceEvent({});
+
+                expect(result.status).toEqual(200);
+                expect(await result.text()).toEqual('Event has no Vendure metadata, skipped.');
+            });
+        });
+
+        it('Should skip events with null metadata, when the plugin option is set', async () => {
+            await withSkipOption(true, async () => {
+                const result = await postBalanceEvent({ metadata: null });
+
+                expect(result.status).toEqual(200);
+                expect(await result.text()).toEqual('Event has no Vendure metadata, skipped.');
+            });
+        });
+
+        it('Should reject instead of skipping events without expected metadata, when the plugin option is not set', async () => {
+            await withSkipOption(false, async () => {
+                const incomplete = await postBalanceEvent({ metadata: { dummy: 'not a vendure payload' } });
+                const missing = await postBalanceEvent({});
+                const nullMetadata = await postBalanceEvent({ metadata: null });
+
+                expect(incomplete.status).toEqual(500);
+                expect(missing.status).toEqual(500);
+                expect(nullMetadata.status).toEqual(500);
+
+                const { statusCode, message } = (await incomplete.json()) as { statusCode: number; message: string };
+                expect(await missing.json()).toMatchObject({ statusCode, message });
+                expect(await nullMetadata.json()).toMatchObject({ statusCode, message });
+            });
+        });
     });
 
     // https://github.com/vendurehq/vendure/issues/1630
