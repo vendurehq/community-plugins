@@ -40,6 +40,40 @@ the Stripe CLI to test your webhook locally. See the _local development_ section
 2. Create a new PaymentMethod in the Admin UI, and select "Stripe payments" as the handler.
 3. Set the webhook secret and API key in the PaymentMethod form.
 
+### Encrypting the Stripe credentials
+
+By default, the API key and webhook secret are stored in plain text. On Vendure 3.8 or later, set
+`encryptSecrets` to encrypt them in the database and to redact them in API responses for users
+without the `ReadSecret` permission:
+
+```ts
+import { DefaultEncryptionStrategy } from '@vendure/core';
+import { StripePlugin } from '@vendure-community/stripe-plugin';
+
+export const config: VendureConfig = {
+    systemOptions: {
+        encryptionStrategy: new DefaultEncryptionStrategy({
+            secret: process.env.VENDURE_ENCRYPTION_KEY,
+        }),
+    },
+    plugins: [
+        StripePlugin.init({
+            encryptSecrets: true,
+        }),
+    ],
+};
+```
+
+- The server refuses to start if `encryptSecrets` is set on an older version of Vendure, or if no
+  encryption key is configured.
+- **Existing values stay in plain text until a new value is saved.** After enabling the option, enter
+  both credentials again in each Stripe PaymentMethod. Saving the form as a user without
+  `ReadSecret` does not encrypt them, because it submits a placeholder that keeps the stored value.
+- Keep the encryption key stable and backed up. Vendure does not support key rotation, and encrypted
+  values cannot be read without the key.
+- After disabling the option, encrypted values are no longer decrypted, so enter both credentials
+  again.
+
 ## Storefront Usage
 
 The plugin is designed to work with the [Custom payment flow](https://stripe.com/docs/payments/accept-a-payment?platform=web&ui=elements).

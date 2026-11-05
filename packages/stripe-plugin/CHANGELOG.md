@@ -50,6 +50,11 @@ Moves the plugin onto the current Stripe SDK (`stripe@23`) and the `endive` API 
 
 ### Features
 
+- **`encryptSecrets` option.** On Vendure 3.8 or later, set `encryptSecrets: true` to store the
+  `apiKey` and `webhookSecret` arguments encrypted, using the `encryptionStrategy` from your
+  `systemOptions`. Credentials stay in plain text by default, so existing installations and older
+  Vendure versions are unaffected. Values which are already stored stay in plain text until a new
+  value is saved, so enter both credentials again after enabling the option. See the README.
 - **`apiVersion` option**, described above.
 - **`httpClient` option.** Pass `Stripe.createNodeHttpClient(agent)` to route requests through a
   proxy or tune keep-alive, or `Stripe.createFetchHttpClient()` to use `globalThis.fetch`:

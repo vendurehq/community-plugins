@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { ConfigArg } from '@vendure/common/lib/generated-types';
 import {
     Customer,
     IllegalOperationError,
@@ -330,8 +329,7 @@ export class StripeService {
      */
     async getStripeClientForChannel(ctx: RequestContext): Promise<VendureStripeClient> {
         const stripePaymentMethod = await this.findEnabledStripePaymentMethod(ctx);
-        const apiKey = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'apiKey');
-        const webhookSecret = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'webhookSecret');
+        const { apiKey, webhookSecret } = this.getCredentials(stripePaymentMethod);
         return new VendureStripeClient(apiKey, webhookSecret);
     }
 
@@ -347,8 +345,7 @@ export class StripeService {
         if (!isEligible) {
             throw new UserInputError(`Stripe payment method is not eligible for order ${order.code}`);
         }
-        const apiKey = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'apiKey');
-        const webhookSecret = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'webhookSecret');
+        const { apiKey, webhookSecret } = this.getCredentials(stripePaymentMethod);
         return new VendureStripeClient(
             apiKey,
             webhookSecret,
@@ -372,12 +369,15 @@ export class StripeService {
         return stripePaymentMethod;
     }
 
-    private findOrThrowArgValue(args: ConfigArg[], name: string): string {
-        const value = args.find(arg => arg.name === name)?.value;
-        if (!value) {
-            throw Error(`No argument named '${name}' found!`);
+    private getCredentials(paymentMethod: PaymentMethod): { apiKey: string; webhookSecret: string } {
+        const { apiKey, webhookSecret } = stripePaymentMethodHandler.resolveArgs(paymentMethod.handler.args);
+        if (!apiKey) {
+            throw Error(`No argument named 'apiKey' found!`);
         }
-        return value;
+        if (!webhookSecret) {
+            throw Error(`No argument named 'webhookSecret' found!`);
+        }
+        return { apiKey, webhookSecret };
     }
 
     /**

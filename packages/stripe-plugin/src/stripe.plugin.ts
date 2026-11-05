@@ -4,7 +4,7 @@ import { gql } from 'graphql-tag';
 import { STRIPE_PLUGIN_OPTIONS } from './constants';
 import { rawBodyMiddleware } from './raw-body.middleware';
 import { StripeController } from './stripe.controller';
-import { stripePaymentMethodHandler } from './stripe.handler';
+import { setStripeCredentialsEncrypted, stripePaymentMethodHandler } from './stripe.handler';
 import { StripeResolver } from './stripe.resolver';
 import { StripeService } from './stripe.service';
 import { StripePluginOptions } from './types';
@@ -26,6 +26,16 @@ import { StripePluginOptions } from './types';
         StripeService,
     ],
     configuration: config => {
+        const encryptSecrets = StripePlugin.options.encryptSecrets === true;
+        // Vendure < 3.8 ignores the `secret` flag, which would leave the credentials in plain text
+        // while the config says they are encrypted.
+        if (encryptSecrets && !('encryptionStrategy' in config.systemOptions)) {
+            throw new Error(
+                'The StripePlugin `encryptSecrets` option requires Vendure 3.8.0 or later. ' +
+                    'Upgrade Vendure, or remove the option to store the credentials in plain text.',
+            );
+        }
+        setStripeCredentialsEncrypted(encryptSecrets);
         config.paymentOptions.paymentMethodHandlers.push(stripePaymentMethodHandler);
 
         config.apiOptions.middleware.push({
