@@ -10,12 +10,13 @@ import {
 import nock from 'nock';
 import fetch from 'node-fetch';
 import path from 'path';
-import { Stripe } from 'stripe';
+import Stripe from 'stripe';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
 import { StripePlugin } from '../src';
+import { StripePaymentIntent } from '../src/stripe-types';
 import { stripePaymentMethodHandler } from '../src/stripe.handler';
 
 import {
@@ -38,7 +39,7 @@ const STRIPE_BASE_URL = 'https://api.stripe.com/';
  */
 function signedWebhook(payload: object): { body: string; header: string } {
     const body = JSON.stringify(payload, null, 2);
-    const header = new Stripe('test-api-key', { apiVersion: '2023-08-16' }).webhooks.generateTestHeaderString({
+    const header = new Stripe('test-api-key').webhooks.generateTestHeaderString({
         payload: body,
         secret: 'test-signing-secret',
     });
@@ -56,7 +57,7 @@ async function postWebhook(serverPort: number, payload: object): Promise<number>
 }
 
 /** Mocks the live-state lookup the webhook does before acting on an authorization. */
-function mockLiveIntent(id: string, status: Stripe.PaymentIntent.Status) {
+function mockLiveIntent(id: string, status: StripePaymentIntent['status']) {
     return nock(STRIPE_BASE_URL).get(`/v1/payment_intents/${id}`).reply(200, { id, status });
 }
 

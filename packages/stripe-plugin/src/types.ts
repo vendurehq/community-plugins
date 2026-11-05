@@ -1,7 +1,15 @@
 import type { Injector, Order, RequestContext } from '@vendure/core';
 import '@vendure/core/dist/entity/custom-entity-fields';
 import type { Request } from 'express';
-import type Stripe from 'stripe';
+
+import {
+    StripeCustomerCreateParams,
+    StripeHttpClient,
+    StripeLatestApiVersion,
+    StripeMetadataParam,
+    StripePaymentIntentCreateParams,
+    StripeRequestOptions,
+} from './stripe-types';
 
 // Note: deep import is necessary here because CustomCustomerFields is also extended in the Braintree
 // plugin. Reference: https://github.com/microsoft/TypeScript/issues/46617
@@ -12,12 +20,12 @@ declare module '@vendure/core/dist/entity/custom-entity-fields' {
 }
 
 type AdditionalPaymentIntentCreateParams = Partial<
-    Omit<Stripe.PaymentIntentCreateParams, 'amount' | 'currency' | 'customer'>
+    Omit<StripePaymentIntentCreateParams, 'amount' | 'currency' | 'customer'>
 >;
 
-type AdditionalRequestOptions = Partial<Omit<Stripe.RequestOptions, 'idempotencyKey'>>;
+type AdditionalRequestOptions = Partial<Omit<StripeRequestOptions, 'idempotencyKey'>>;
 
-type AdditionalCustomerCreateParams = Partial<Omit<Stripe.CustomerCreateParams, 'email'>>;
+type AdditionalCustomerCreateParams = Partial<Omit<StripeCustomerCreateParams, 'email'>>;
 
 /**
  * @description
@@ -97,7 +105,7 @@ export interface StripePluginOptions {
         injector: Injector,
         ctx: RequestContext,
         order: Order,
-    ) => Stripe.MetadataParam | Promise<Stripe.MetadataParam>;
+    ) => StripeMetadataParam | Promise<StripeMetadataParam>;
 
     /**
      * @description
@@ -223,6 +231,49 @@ export interface StripePluginOptions {
      * to `true` to skip processing those payment intents.
      */
     skipPaymentIntentsWithoutExpectedMetadata?: boolean;
+
+    /**
+     * @description
+     * The Stripe API version to send with every request. Defaults to the version
+     * pinned by the installed `stripe` package, matching the API its TypeScript
+     * types describe. Each `stripe` minor release can pin a newer version within
+     * the same API release (for example `2026-09-30.endive`); set this option to
+     * keep the version fixed across `stripe` upgrades.
+     *
+     * Override with an older version string (cast to `StripeLatestApiVersion`)
+     * if you can't yet upgrade your Stripe account to the SDK's pinned version
+     * and need the API to reply in the older shape. Note that the SDK's types
+     * will then diverge from the actual responses.
+     *
+     * @default undefined (SDK pinned version)
+     * @since 2.0.0
+     */
+    apiVersion?: StripeLatestApiVersion;
+
+    /**
+     * @description
+     * Override the HTTP client used to talk to Stripe. When unset, the SDK uses
+     * its default Node client (`node:http`/`node:https`). Pass a
+     * `NodeHttpClient` with a custom `http.Agent` to route requests through a
+     * proxy or tune keep-alive, or `Stripe.createFetchHttpClient()` to use
+     * `globalThis.fetch`.
+     *
+     * @example
+     * ```ts
+     * import Stripe from 'stripe';
+     * import { HttpsProxyAgent } from 'https-proxy-agent';
+     *
+     * StripePlugin.init({
+     *     httpClient: Stripe.createNodeHttpClient(
+     *         new HttpsProxyAgent(process.env.HTTPS_PROXY!),
+     *     ),
+     * });
+     * ```
+     *
+     * @default undefined (the SDK's Node client)
+     * @since 2.0.0
+     */
+    httpClient?: StripeHttpClient;
 }
 
 export interface RequestWithRawBody extends Request {
