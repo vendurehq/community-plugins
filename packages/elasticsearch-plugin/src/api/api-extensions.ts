@@ -30,7 +30,7 @@ export function generateSchemaExtensions(options: ElasticsearchOptions): Documen
         }
 
         type PriceRangeBucket {
-            to: Int!
+            to: Money!
             count: Int!
         }
 
@@ -45,8 +45,8 @@ export function generateSchemaExtensions(options: ElasticsearchOptions): Documen
         ${sortExtensions.length > 0 ? sortExtensionGql : ''}
 
         input PriceRangeInput {
-            min: Int!
-            max: Int!
+            min: Money!
+            max: Money!
         }
 
         ${customMappingTypes ? customMappingTypes : ''}
