@@ -235,8 +235,10 @@ export interface StripePluginOptions {
     /**
      * @description
      * The Stripe API version to send with every request. Defaults to the version
-     * pinned by the SDK (currently `2026-05-27.dahlia`), matching the API the
-     * SDK's TypeScript types describe.
+     * pinned by the installed `stripe` package, matching the API its TypeScript
+     * types describe. Each `stripe` minor release can pin a newer version within
+     * the same API release (for example `2026-09-30.endive`); set this option to
+     * keep the version fixed across `stripe` upgrades.
      *
      * Override with an older version string (cast to `StripeLatestApiVersion`)
      * if you can't yet upgrade your Stripe account to the SDK's pinned version

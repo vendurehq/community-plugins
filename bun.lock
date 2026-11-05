@@ -195,20 +195,20 @@
     },
     "packages/stripe-plugin": {
       "name": "@vendure-community/stripe-plugin",
-      "version": "1.1.0",
+      "version": "2.0.0-rc.0",
       "devDependencies": {
         "@vendure/common": "3.6.0-minor-202603280303",
         "@vendure/core": "3.6.0-minor-202603280303",
         "@vendure/testing": "3.6.0-minor-202603280303",
         "nock": "^14.0.0",
         "rimraf": "^6.0.0",
-        "stripe": "^22.0.0",
+        "stripe": "^23.0.1",
         "typescript": "5.8.2",
       },
       "peerDependencies": {
         "@vendure/common": "^3.6.0-0",
         "@vendure/core": "^3.6.0-0",
-        "stripe": "^22.0.0",
+        "stripe": "^23.0.0",
       },
     },
   },
@@ -2557,7 +2557,7 @@
 
     "strip-literal": ["strip-literal@3.1.0", "", { "dependencies": { "js-tokens": "^9.0.1" } }, "sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg=="],
 
-    "stripe": ["stripe@22.2.0", "", { "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-WFGpMOom9QZqso1kcnSwJsCdC1QHDlMoCOxBZRf3JraMzhkfw7dgSdD2a1CFZrqC+mzAfqeEtYILrZhWKIDruA=="],
+    "stripe": ["stripe@23.0.1", "", { "peerDependencies": { "@types/node": ">=20" }, "optionalPeers": ["@types/node"] }, "sha512-VFLs9IAzSZ8GIm6/vqhjqOL0fbYrSNYCpgZ3LS3YkSi/i5RnyMpu/Hf9YxPTOCYwc3mZKU3IJvuvKffQH2NLMg=="],
 
     "strtok3": ["strtok3@9.1.1", "", { "dependencies": { "@tokenizer/token": "^0.3.0", "peek-readable": "^5.3.1" } }, "sha512-FhwotcEqjr241ZbjFzjlIYg6c5/L/s4yBGWSMvJ9UoExiSqL+FnFA/CaeZx17WGaZMS/4SOZp8wH18jSS4R4lw=="],
 

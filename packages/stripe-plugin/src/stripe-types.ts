@@ -1,11 +1,12 @@
 /**
- * Re-exports for Stripe namespace types that are unreachable via the default
- * import under `moduleResolution: NodeNext` + CommonJS in stripe@22's d.ts
- * shipping shape (see https://github.com/stripe/stripe-node/issues/2683 /
- * https://github.com/stripe/stripe-node/pull/2725). The PR is not yet merged
- * at the time of writing; once the upstream fix ships and we pin a version
- * that includes it, the rest of the plugin can switch back to direct
- * `Stripe.PaymentIntent`-style access and this file can be deleted.
+ * Aliases for the Stripe SDK types the plugin uses, derived from the client's
+ * method signatures. They were added because stripe@22 did not expose its
+ * namespace types (`Stripe.PaymentIntent` etc.) through the default import under
+ * `moduleResolution: NodeNext` + CommonJS
+ * (https://github.com/stripe/stripe-node/issues/2683). stripe@23 does, so the
+ * internal aliases could be replaced with direct namespace access.
+ * `StripeHttpClient` and `StripeLatestApiVersion` are exported from the plugin
+ * and must stay.
  */
 import type Stripe from 'stripe';
 

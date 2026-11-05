@@ -31,7 +31,7 @@
     "peerDependencies": {
         "@vendure/core": "^3.6.0-0",
         "@vendure/common": "^3.6.0-0",
-        "stripe": "^22.0.0"
+        "stripe": "^23.0.0"
     },
     "devDependencies": {
         "@vendure/common": "3.6.0-minor-202603280303",
@@ -39,7 +39,7 @@
         "@vendure/testing": "3.6.0-minor-202603280303",
         "nock": "^14.0.0",
         "rimraf": "^6.0.0",
-        "stripe": "^22.0.0",
+        "stripe": "^23.0.1",
         "typescript": "5.8.2"
     }
 }
