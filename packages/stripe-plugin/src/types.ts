@@ -47,6 +47,38 @@ export interface StripePluginOptions {
 
     /**
      * @description
+     * If set to `true`, the `apiKey` and `webhookSecret` arguments of the Stripe PaymentMethod are
+     * encrypted in the database and redacted in API responses for users without the `ReadSecret`
+     * permission. Otherwise they are stored in plain text.
+     *
+     * Requires Vendure 3.8.0 or later and a configured encryption key. The server refuses to start
+     * if either is missing:
+     *
+     * @example
+     * ```ts
+     * import { DefaultEncryptionStrategy } from '@vendure/core';
+     *
+     * export const config: VendureConfig = {
+     *     systemOptions: {
+     *         encryptionStrategy: new DefaultEncryptionStrategy({
+     *             secret: process.env.VENDURE_ENCRYPTION_KEY,
+     *         }),
+     *     },
+     *     plugins: [StripePlugin.init({ encryptSecrets: true })],
+     * };
+     * ```
+     *
+     * Enabling this does not change values which are already stored: each one stays in plain text
+     * until a new value is saved for it. After disabling this, encrypted values are no longer
+     * decrypted, so both credentials must be entered again.
+     *
+     * @default false
+     * @since 2.0.0
+     */
+    encryptSecrets?: boolean;
+
+    /**
+     * @description
      * Controls how the PaymentIntent captures funds.
      *
      * `'automatic'` (the default) charges the card as soon as the customer confirms payment, which
