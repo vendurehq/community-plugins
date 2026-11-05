@@ -1,4 +1,4 @@
-import type { Injector, Order, RequestContext } from '@vendure/core';
+import type { Injector, Order, Payment, RequestContext } from '@vendure/core';
 import '@vendure/core/dist/entity/custom-entity-fields';
 import type { Request } from 'express';
 import type Stripe from 'stripe';
@@ -18,6 +18,8 @@ type AdditionalPaymentIntentCreateParams = Partial<
 type AdditionalRequestOptions = Partial<Omit<Stripe.RequestOptions, 'idempotencyKey'>>;
 
 type AdditionalCustomerCreateParams = Partial<Omit<Stripe.CustomerCreateParams, 'email'>>;
+
+type AdditionalRefundCreateParams = Partial<Omit<Stripe.RefundCreateParams, 'payment_intent' | 'amount'>>;
 
 /**
  * @description
@@ -217,6 +219,48 @@ export interface StripePluginOptions {
         ctx: RequestContext,
         order: Order,
     ) => AdditionalCustomerCreateParams | Promise<AdditionalCustomerCreateParams>;
+
+    /**
+     * @description
+     * Provide additional parameters to the Stripe refund creation. By default,
+     * the plugin will already pass the `payment_intent` and `amount` parameters.
+     * The `payment` and `amount` arguments are the payment being refunded and the
+     * amount of this refund in minor units.
+     *
+     * For example, with [destination charges](https://docs.stripe.com/connect/destination-charges#issue-refunds)
+     * a refund is taken from the platform balance unless the transfer is reversed, and the
+     * application fee is only returned if you ask for it:
+     *
+     * @example
+     * ```ts
+     * import { VendureConfig } from '\@vendure/core';
+     * import { StripePlugin } from '\@vendure-community/stripe-plugin';
+     *
+     * export const config: VendureConfig = {
+     *   // ...
+     *   plugins: [
+     *     StripePlugin.init({
+     *       refundCreateParams: (injector, ctx, order, payment, amount) => {
+     *         return {
+     *           reverse_transfer: true,
+     *           refund_application_fee: false,
+     *         };
+     *       }
+     *     }),
+     *   ],
+     * };
+     * ```
+     *
+     * @since 1.2.0
+     */
+    refundCreateParams?: (
+        injector: Injector,
+        ctx: RequestContext,
+        order: Order,
+        payment: Payment,
+        amount: number,
+    ) => AdditionalRefundCreateParams | Promise<AdditionalRefundCreateParams>;
+
     /**
      * @description
      * If your Stripe account also generates payment intents which are independent of Vendure orders, you can set this

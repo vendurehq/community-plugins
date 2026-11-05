@@ -156,4 +156,77 @@ describe('Stripe refunds', () => {
 
         expect(request.stripeAccount).toEqual('acct_connected');
     });
+
+    describe('refundCreateParams', () => {
+        afterEach(() => {
+            StripePlugin.options.refundCreateParams = undefined;
+        });
+
+        it('merges the returned params and passes the order, payment and amount', async () => {
+            const { order, payment } = await settledPayment(2, 'pi_destination');
+            const seen: { orderCode?: string; paymentId?: unknown; amount?: number } = {};
+            StripePlugin.options.refundCreateParams = (injector, ctx, refundedOrder, p, amount) => {
+                seen.orderCode = refundedOrder.code;
+                seen.paymentId = p.id;
+                seen.amount = amount;
+                return Promise.resolve({ reverse_transfer: true, refund_application_fee: false });
+            };
+            const request = mockRefund();
+
+            const refund = await refundOrderLine(adminClient, order.lines[0].id, 1, payment.id, 0);
+
+            expect(request.body).toEqual({
+                payment_intent: 'pi_destination',
+                amount: String(refund.total),
+                reverse_transfer: 'true',
+                refund_application_fee: 'false',
+            });
+            expect(seen).toEqual({
+                orderCode: order.code,
+                paymentId: expect.anything(),
+                amount: refund.total,
+            });
+        });
+
+        it('cannot change which payment is refunded, or by how much', async () => {
+            const { order, payment } = await settledPayment(3, 'pi_authoritative');
+            StripePlugin.options.refundCreateParams = () =>
+                ({ payment_intent: 'pi_other', amount: 1 }) as object;
+            const request = mockRefund();
+
+            const refund = await refundOrderLine(adminClient, order.lines[0].id, 1, payment.id, 0);
+
+            expect(request.body).toEqual({
+                payment_intent: 'pi_authoritative',
+                amount: String(refund.total),
+            });
+        });
+
+        it('sanitizes the returned metadata', async () => {
+            const { order, payment } = await settledPayment(4, 'pi_metadata');
+            StripePlugin.options.refundCreateParams = () => ({
+                metadata: { kept: 'value', dropped: 'x'.repeat(501) },
+            });
+            const request = mockRefund();
+
+            await refundOrderLine(adminClient, order.lines[0].id, 1, payment.id, 0);
+
+            expect(request.body?.['metadata[kept]']).toEqual('value');
+            expect(request.body).not.toHaveProperty('metadata[dropped]');
+        });
+
+        it('does not refund if the callback fails', async () => {
+            const { order, payment } = await settledPayment(5, 'pi_throws');
+            StripePlugin.options.refundCreateParams = () => {
+                throw new Error('Could not resolve refund params');
+            };
+            const request = mockRefund();
+
+            await expect(refundOrderLine(adminClient, order.lines[0].id, 1, payment.id, 0)).rejects.toThrow(
+                'Could not resolve refund params',
+            );
+
+            expect(request.body).toBeUndefined();
+        });
+    });
 });
