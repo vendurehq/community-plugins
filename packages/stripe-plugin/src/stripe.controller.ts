@@ -37,6 +37,15 @@ class AuthorizationNotUsableError extends Error {}
 
 @Controller('payments')
 export class StripeController {
+    /**
+     * Per-order mutex chains serializing webhook settlement within this
+     * process. The row lock inside the transaction covers overlap across
+     * processes, but SQLite-family drivers skip it (see lockOrderForUpdate) —
+     * and the e2e suite runs on sqljs — so same-process overlap is
+     * serialized here instead.
+     */
+    private readonly settlementLocks = new Map<string, Promise<void>>();
+
     constructor(
         @Inject(STRIPE_PLUGIN_OPTIONS) private options: StripePluginOptions,
         private paymentMethodService: PaymentMethodService,
@@ -127,6 +136,7 @@ export class StripeController {
         // capture can never succeed while Vendure rolls back the payment.
         let orderToCapture: Order | undefined;
 
+        const releaseSettlementLock = await this.acquireOrderSettlementLock(orderCode);
         try {
             await this.connection.withTransaction(outerCtx, async (ctx: RequestContext) => {
                 // Serialize webhook processing per order: a concurrent delivery of the same event
@@ -290,8 +300,15 @@ export class StripeController {
                         );
                         if (isManualCapture) {
                             shouldVoidAuthorization = true;
+                            return;
                         }
-                        return;
+                        // Automatic capture: the funds are already charged, so failing
+                        // silently with a 200 would leave the order unsettled with no
+                        // retry. Throw so the catch below answers 5xx and Stripe
+                        // redelivers; the idempotency guard makes redelivery safe.
+                        throw new InternalServerError(
+                            `Stripe settlement failed for order ${orderCode}: could not transition to ArrangingPayment`,
+                        );
                     }
                 }
 
@@ -320,8 +337,13 @@ export class StripeController {
                     // example the item sold out), so the hold must be released.
                     if (isManualCapture) {
                         shouldVoidAuthorization = true;
+                        return;
                     }
-                    return;
+                    // Automatic capture: see the transition failure above — fail the
+                    // request so Stripe retries instead of recording it as delivered.
+                    throw new InternalServerError(
+                        `Stripe settlement failed for order ${orderCode}: ${addPaymentToOrderResult.message}`,
+                    );
                 }
 
                 if (isManualCapture && !(await this.isReadyForCapture(ctx, addPaymentToOrderResult))) {
@@ -366,6 +388,8 @@ export class StripeController {
                 }
             }
             // Otherwise the payment was rolled back on purpose and the hold is voided below.
+        } finally {
+            releaseSettlementLock();
         }
 
         if (orderToCapture && !response.headersSent) {
@@ -590,6 +614,31 @@ export class StripeController {
             req: req as any,
             languageCode,
         });
+    }
+
+    /**
+     * Acquires the per-order settlement mutex, serializing overlapping
+     * webhook deliveries within this process. The returned function releases
+     * the mutex and must run once the settlement transaction settles (see
+     * the `finally` at the call site) so a failed delivery cannot wedge
+     * later ones. The chain entry is removed once it drains, so the map does
+     * not grow over time.
+     */
+    private async acquireOrderSettlementLock(orderCode: string): Promise<() => void> {
+        const previous = this.settlementLocks.get(orderCode) ?? Promise.resolve();
+        let release: () => void = () => undefined;
+        const current = new Promise<void>(resolve => {
+            release = resolve;
+        });
+        const mine = previous.then(() => current);
+        this.settlementLocks.set(orderCode, mine);
+        await previous;
+        return () => {
+            release();
+            if (this.settlementLocks.get(orderCode) === mine) {
+                this.settlementLocks.delete(orderCode);
+            }
+        };
     }
 
     private async getPaymentMethod(ctx: RequestContext): Promise<PaymentMethod> {
