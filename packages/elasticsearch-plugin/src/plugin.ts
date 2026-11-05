@@ -142,6 +142,12 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
         this.eventBus.ofType(ProductVariantEvent).subscribe(event => {
             if (event.type === 'deleted') {
                 return this.elasticsearchIndexService.deleteVariant(event.ctx, event.variants);
+            } else if (event.type === 'updated') {
+                return this.elasticsearchIndexService.updateVariantsForVariantEvent(
+                    event.ctx,
+                    event.variants,
+                    event.input,
+                );
             } else {
                 return this.elasticsearchIndexService.updateVariants(event.ctx, event.variants);
             }
@@ -188,7 +194,7 @@ export class ElasticsearchPlugin implements OnApplicationBootstrap {
         });
 
         this.eventBus.ofType(StockMovementEvent).subscribe(event => {
-            return this.elasticsearchIndexService.updateVariants(
+            return this.elasticsearchIndexService.updateVariantsForStockMovement(
                 event.ctx,
                 event.stockMovements.map(m => m.productVariant),
             );
