@@ -142,8 +142,9 @@ type _Event = Assert<
 // API version must remain a string literal so cast targets stay valid.
 type _ApiVersion = Assert<Extends<StripeLatestApiVersion, string>>;
 
-// HttpClient must remain a value Stripe.createFetchHttpClient() produces.
+// Both of the SDK's HTTP clients must be accepted by the `httpClient` option.
 type _HttpClient = Assert<Extends<ReturnType<typeof Stripe.createFetchHttpClient>, StripeHttpClient>>;
+type _NodeHttpClient = Assert<Extends<ReturnType<typeof Stripe.createNodeHttpClient>, StripeHttpClient>>;
 
 // Silence "is declared but never used" for the assertion locals — they exist
 // for their compile-time effect only.
@@ -152,6 +153,7 @@ export type {
     _CustomerCreateParams,
     _Event,
     _HttpClient,
+    _NodeHttpClient,
     _Metadata,
     _PaymentIntent,
     _PaymentIntentCreateParams,

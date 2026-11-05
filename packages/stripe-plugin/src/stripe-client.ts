@@ -16,11 +16,8 @@ import { StripeHttpClient, StripeLatestApiVersion } from './stripe-types';
  * Stripe account's default API version. This was true on stripe-node v13
  * too, despite a misleading comment in the pre-2.0.0 plugin code.
  *
- * `httpClient` overrides the underlying HTTP transport. The default is
- * Stripe's fetch-based client (`globalThis.fetch`), which sidesteps a
- * deadlock between Stripe's NodeHttpClient and modern HTTP mocking
- * libraries (nock@14 / @mswjs/interceptors). Pass a NodeHttpClient with
- * a custom `http.Agent` to route through a proxy or tune keep-alive.
+ * `httpClient` overrides the underlying HTTP transport. When it is not set,
+ * the SDK uses its default Node client (`node:http`/`node:https`).
  */
 export class VendureStripeClient extends Stripe {
     constructor(
@@ -31,7 +28,7 @@ export class VendureStripeClient extends Stripe {
     ) {
         super(apiKey, {
             apiVersion,
-            httpClient: httpClient ?? Stripe.createFetchHttpClient(),
+            httpClient,
             // Retry requests that fail due to a network error or a transient Stripe error (5xx/429).
             // The SDK attaches idempotency keys to the retries, so a retried capture, cancel or
             // refund never double-acts on the PaymentIntent.

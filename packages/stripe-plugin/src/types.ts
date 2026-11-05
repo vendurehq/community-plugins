@@ -252,12 +252,11 @@ export interface StripePluginOptions {
 
     /**
      * @description
-     * Override the HTTP client used to talk to Stripe. Defaults to Stripe's
-     * `FetchHttpClient` (using `globalThis.fetch`), which is what the plugin
-     * uses when this option is left unset. Override to inject a
-     * `NodeHttpClient` with a custom `http.Agent` if you need to route
-     * requests through a proxy, tune keep-alive behaviour, or otherwise
-     * customise the underlying TCP/TLS layer.
+     * Override the HTTP client used to talk to Stripe. When unset, the SDK uses
+     * its default Node client (`node:http`/`node:https`). Pass a
+     * `NodeHttpClient` with a custom `http.Agent` to route requests through a
+     * proxy or tune keep-alive, or `Stripe.createFetchHttpClient()` to use
+     * `globalThis.fetch`.
      *
      * @example
      * ```ts
@@ -271,7 +270,7 @@ export interface StripePluginOptions {
      * });
      * ```
      *
-     * @default undefined (Stripe.createFetchHttpClient())
+     * @default undefined (the SDK's Node client)
      * @since 2.0.0
      */
     httpClient?: StripeHttpClient;

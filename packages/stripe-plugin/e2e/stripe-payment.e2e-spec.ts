@@ -760,7 +760,6 @@ describe('Stripe payments', () => {
         });
     });
 
-    // Pre-merge confidence tests for OSS-555 items 2 & 6.
     describe('VendureStripeClient configuration', () => {
         it('sets Stripe-Version header to the SDK pinned version by default', async () => {
             let capturedVersion: string | string[] | undefined;
@@ -772,8 +771,7 @@ describe('Stripe payments', () => {
                 });
             const client = new VendureStripeClient('sk_test_key', 'whsec_test');
             await client.customers.create({ email: 'test@example.com' });
-            // The exact pinned version is owned by the SDK release; just assert
-            // we got a real header that smells like a dahlia / clover / basil API date.
+            // The exact pinned version is owned by the SDK release; only the format is checked.
             expect(capturedVersion).toMatch(/^\d{4}-\d{2}-\d{2}(\.\w+)?$/);
         });
 
@@ -788,6 +786,33 @@ describe('Stripe payments', () => {
             const client = new VendureStripeClient('sk_test_key', 'whsec_test', '2024-06-20' as any);
             await client.customers.create({ email: 'test@example.com' });
             expect(capturedVersion).toBe('2024-06-20');
+        });
+
+        async function captureHttpLib(client: VendureStripeClient): Promise<string | undefined> {
+            let userAgent: string | string[] | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/customers')
+                .reply(function reply() {
+                    userAgent = this.req.headers['x-stripe-client-user-agent'];
+                    return [200, { id: 'cus_test' }];
+                });
+            await client.customers.create({ email: 'test@example.com' });
+            return JSON.parse(String(userAgent)).httplib;
+        }
+
+        it('uses the SDK Node HTTP client by default', async () => {
+            const client = new VendureStripeClient('sk_test_key', 'whsec_test');
+            expect(await captureHttpLib(client)).toBe('node');
+        });
+
+        it('uses the httpClient option when provided', async () => {
+            const client = new VendureStripeClient(
+                'sk_test_key',
+                'whsec_test',
+                undefined,
+                Stripe.createFetchHttpClient(),
+            );
+            expect(await captureHttpLib(client)).toBe('fetch');
         });
     });
 
