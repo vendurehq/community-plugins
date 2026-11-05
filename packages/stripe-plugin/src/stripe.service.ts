@@ -385,10 +385,11 @@ export class StripeService {
     ): Promise<string | undefined> {
         const [stripe, order] = await Promise.all([
             this.getStripeClient(ctx, activeOrder),
-            // Load relation with customer not available in the response from activeOrderService.getOrderFromContext()
+            // Load relation with customer not available in the response from activeOrderService.getOrderFromContext().
+            // The object form of `relations` works on TypeORM 0.3 and v1; the string-array form was removed in v1.
             this.connection.getRepository(ctx, Order).findOne({
                 where: { id: activeOrder.id },
-                relations: ['customer'],
+                relations: { customer: true },
             }),
         ]);
 
