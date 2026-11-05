@@ -17,8 +17,9 @@ the Stripe CLI to test your webhook locally. See the _local development_ section
     npm install @vendure-community/stripe-plugin stripe
     ```
 
-    `@vendure-community/stripe-plugin@2.x` requires `stripe@^22`. If you're upgrading from `1.x`,
-    bump both packages together and see the [CHANGELOG](./CHANGELOG.md) for migration notes.
+    `@vendure-community/stripe-plugin@2.x` requires `stripe@^23` and Node.js 20 or later. If you're
+    upgrading from `1.x`, upgrade both packages together and see the [CHANGELOG](./CHANGELOG.md)
+    for migration notes.
 
 ## Setup
 
