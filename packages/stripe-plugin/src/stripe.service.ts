@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
+    ConfigService,
     Customer,
     IllegalOperationError,
     Injector,
@@ -48,6 +49,7 @@ export class StripeService {
         private connection: TransactionalConnection,
         private paymentMethodService: PaymentMethodService,
         private moduleRef: ModuleRef,
+        private configService: ConfigService,
     ) {}
 
     async createPaymentIntent(ctx: RequestContext, order: Order): Promise<string> {
@@ -371,6 +373,8 @@ export class StripeService {
 
     private getCredentials(paymentMethod: PaymentMethod): { apiKey: string; webhookSecret: string } {
         const { apiKey, webhookSecret } = stripePaymentMethodHandler.resolveArgs(paymentMethod.handler.args);
+        this.assertNotEncrypted('apiKey', apiKey);
+        this.assertNotEncrypted('webhookSecret', webhookSecret);
         if (!apiKey) {
             throw Error(`No argument named 'apiKey' found!`);
         }
@@ -378,6 +382,26 @@ export class StripeService {
             throw Error(`No argument named 'webhookSecret' found!`);
         }
         return { apiKey, webhookSecret };
+    }
+
+    /**
+     * Without `encryptSecrets`, core does not decrypt the credentials, so a value encrypted while the
+     * option was on would be sent to Stripe as ciphertext and fail as an authentication error.
+     */
+    private assertNotEncrypted(name: string, value: string | undefined): void {
+        if (this.options.encryptSecrets || !value) {
+            return;
+        }
+        // `encryptionStrategy` exists from Vendure 3.8; the plugin also supports older versions.
+        const { encryptionStrategy } = this.configService.systemOptions as {
+            encryptionStrategy?: { isEncrypted(value: string): boolean };
+        };
+        if (encryptionStrategy?.isEncrypted(value)) {
+            throw new Error(
+                `The Stripe '${name}' is stored encrypted, but the StripePlugin \`encryptSecrets\` option ` +
+                    'is not enabled. Enable the option, or enter the credential again on the Stripe payment method.',
+            );
+        }
     }
 
     /**

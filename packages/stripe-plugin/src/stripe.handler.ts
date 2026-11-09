@@ -10,7 +10,7 @@ import {
     SettlePaymentErrorResult,
     SettlePaymentResult,
 } from '@vendure/core';
-import { ConfigArgs, ConfigArgValues } from '@vendure/core/dist/common/configurable-operation';
+import type { ConfigArgs, ConfigArgValues } from '@vendure/core/dist/common/configurable-operation';
 import Stripe from 'stripe';
 
 import { getAmountFromStripeMinorUnits, isRetryableStripeError } from './stripe-utils';

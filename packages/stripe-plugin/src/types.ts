@@ -70,7 +70,8 @@ export interface StripePluginOptions {
      *
      * Enabling this does not change values which are already stored: each one stays in plain text
      * until a new value is saved for it. After disabling this, encrypted values are no longer
-     * decrypted, so both credentials must be entered again.
+     * decrypted, so both credentials must be entered again; until then, Stripe requests fail with
+     * an error saying the credential is stored encrypted.
      *
      * @default false
      * @since 2.0.0

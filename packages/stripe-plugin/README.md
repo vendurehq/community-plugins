@@ -72,7 +72,8 @@ export const config: VendureConfig = {
 - Keep the encryption key stable and backed up. Vendure does not support key rotation, and encrypted
   values cannot be read without the key.
 - After disabling the option, encrypted values are no longer decrypted, so enter both credentials
-  again.
+  again. Until you do, Stripe requests fail with an error saying the credential is stored
+  encrypted.
 
 ## Storefront Usage
 

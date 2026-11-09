@@ -156,6 +156,15 @@ describe('encryptSecrets disabled', () => {
         expect(client.webhookSecret).toBe(WEBHOOK_SECRET);
         await expectWebhookVerifiesWith(env, WEBHOOK_SECRET);
     });
+
+    // Values encrypted while the option was on must not be sent to Stripe as ciphertext.
+    it.runIf(supportsEncryption)('refuses to use credentials stored encrypted', async () => {
+        await setStoredArgs(env, `${CIPHERTEXT_PREFIX}iv:tag:data`, WEBHOOK_SECRET);
+        await expect(getClient(env)).rejects.toThrow(
+            "The Stripe 'apiKey' is stored encrypted, but the StripePlugin `encryptSecrets` option is not enabled",
+        );
+        await setStoredArgs(env, API_KEY, WEBHOOK_SECRET);
+    });
 });
 
 describe.runIf(supportsEncryption)('encryptSecrets enabled', () => {
