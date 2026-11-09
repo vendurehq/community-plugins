@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { ConfigArg } from '@vendure/common/lib/generated-types';
 import {
+    ConfigService,
     Customer,
     IllegalOperationError,
     Injector,
@@ -14,11 +14,17 @@ import {
     TransactionalConnection,
     UserInputError,
 } from '@vendure/core';
-import Stripe from 'stripe';
 
 import { loggerCtx, STRIPE_PLUGIN_OPTIONS } from './constants';
 import { sanitizeMetadata } from './metadata-sanitize';
 import { VendureStripeClient } from './stripe-client';
+import {
+    StripeEvent,
+    StripePaymentIntent,
+    StripePaymentIntentCreateParams,
+    StripeRefund,
+    StripeRequestOptions,
+} from './stripe-types';
 import { getAmountInStripeMinorUnits, isUnexpectedIntentStateError } from './stripe-utils';
 import { stripePaymentMethodHandler } from './stripe.handler';
 import { StripePluginOptions } from './types';
@@ -29,6 +35,13 @@ import { StripePluginOptions } from './types';
  */
 const MAX_PAYMENT_INTENT_ATTEMPTS = 10;
 
+const STRIPE_REFUND_REASONS = ['duplicate', 'fraudulent', 'requested_by_customer'] as const;
+type StripeRefundReason = (typeof STRIPE_REFUND_REASONS)[number];
+
+function isStripeRefundReason(reason: string | undefined): reason is StripeRefundReason {
+    return !!reason && (STRIPE_REFUND_REASONS as readonly string[]).includes(reason);
+}
+
 @Injectable()
 export class StripeService {
     constructor(
@@ -36,6 +49,7 @@ export class StripeService {
         private connection: TransactionalConnection,
         private paymentMethodService: PaymentMethodService,
         private moduleRef: ModuleRef,
+        private configService: ConfigService,
     ) {}
 
     async createPaymentIntent(ctx: RequestContext, order: Order): Promise<string> {
@@ -94,7 +108,7 @@ export class StripeService {
             delete additional.capture_method;
         }
 
-        const createParams: Stripe.PaymentIntentCreateParams = {
+        const createParams: StripePaymentIntentCreateParams = {
             amount: amountInMinorUnits,
             currency: order.currencyCode.toLowerCase(),
             customer: customerId,
@@ -155,7 +169,7 @@ export class StripeService {
         ctx: RequestContext,
         order: Order,
         paymentIntentId: string,
-    ): Promise<Stripe.PaymentIntent> {
+    ): Promise<StripePaymentIntent> {
         const stripe = await this.getStripeClient(ctx, order);
         const requestOptions = await this.resolveRequestOptions(ctx, order);
         return stripe.paymentIntents.retrieve(paymentIntentId, undefined, requestOptions);
@@ -178,7 +192,7 @@ export class StripeService {
         ctx: RequestContext,
         order: Order,
         paymentIntentId: string,
-    ): Promise<Stripe.PaymentIntent> {
+    ): Promise<StripePaymentIntent> {
         const stripe = await this.getStripeClient(ctx, order);
         const requestOptions = await this.resolveRequestOptions(ctx, order);
         try {
@@ -204,7 +218,7 @@ export class StripeService {
         ctx: RequestContext,
         order: Order,
         paymentIntentId: string,
-    ): Promise<Stripe.PaymentIntent> {
+    ): Promise<StripePaymentIntent> {
         const stripe = await this.getStripeClient(ctx, order);
         const requestOptions = await this.resolveRequestOptions(ctx, order);
         try {
@@ -232,12 +246,12 @@ export class StripeService {
      */
     private async resolveConfirmableIntent(
         stripe: VendureStripeClient,
-        createdIntent: Stripe.PaymentIntent,
-        createParams: Stripe.PaymentIntentCreateParams,
+        createdIntent: StripePaymentIntent,
+        createParams: StripePaymentIntentCreateParams,
         idempotencyKey: string,
-        requestOptions: Stripe.RequestOptions | undefined,
+        requestOptions: StripeRequestOptions | undefined,
         orderCode: string,
-    ): Promise<Stripe.PaymentIntent> {
+    ): Promise<StripePaymentIntent> {
         let intent = createdIntent;
         for (let attempt = 0; attempt < MAX_PAYMENT_INTENT_ATTEMPTS; attempt++) {
             const live = await stripe.paymentIntents.retrieve(intent.id, undefined, requestOptions);
@@ -259,7 +273,7 @@ export class StripeService {
         );
     }
 
-    private isConfirmableStatus(status: Stripe.PaymentIntent.Status): boolean {
+    private isConfirmableStatus(status: StripePaymentIntent['status']): boolean {
         return (
             status === 'requires_payment_method' ||
             status === 'requires_confirmation' ||
@@ -272,7 +286,7 @@ export class StripeService {
         order: Order,
         payload: Buffer,
         signature: string,
-    ): Promise<Stripe.Event> {
+    ): Promise<StripeEvent> {
         const stripe = await this.getStripeClient(ctx, order);
         return stripe.webhooks.constructEvent(payload, signature, stripe.webhookSecret);
     }
@@ -281,7 +295,7 @@ export class StripeService {
         ctx: RequestContext,
         payload: Buffer,
         signature: string,
-    ): Promise<Stripe.Event> {
+    ): Promise<StripeEvent> {
         const stripe = await this.getStripeClientForChannel(ctx);
         return stripe.webhooks.constructEvent(payload, signature, stripe.webhookSecret);
     }
@@ -291,12 +305,20 @@ export class StripeService {
         order: Order,
         payment: Payment,
         amount: number,
-    ): Promise<Stripe.Response<Stripe.Refund>> {
+        reason?: string,
+    ): Promise<StripeRefund> {
         const stripe = await this.getStripeClient(ctx, order);
-        return stripe.refunds.create({
+        const structuredReason = isStripeRefundReason(reason) ? reason : undefined;
+        const params: Parameters<typeof stripe.refunds.create>[0] = {
             payment_intent: payment.transactionId,
             amount,
-        });
+            ...(structuredReason ? { reason: structuredReason } : {}),
+            ...(reason && !structuredReason ? { metadata: { vendureRefundReason: reason } } : {}),
+        };
+        // No idempotency key of our own: refunds are repeatable, so (payment intent, amount) does not
+        // identify one refund, and a colliding key makes Stripe replay an earlier refund instead of
+        // creating a new one. The SDK attaches a per-call key to its own network retries.
+        return stripe.refunds.create(params);
     }
 
     /**
@@ -309,8 +331,7 @@ export class StripeService {
      */
     async getStripeClientForChannel(ctx: RequestContext): Promise<VendureStripeClient> {
         const stripePaymentMethod = await this.findEnabledStripePaymentMethod(ctx);
-        const apiKey = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'apiKey');
-        const webhookSecret = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'webhookSecret');
+        const { apiKey, webhookSecret } = this.getCredentials(stripePaymentMethod);
         return new VendureStripeClient(apiKey, webhookSecret);
     }
 
@@ -326,9 +347,13 @@ export class StripeService {
         if (!isEligible) {
             throw new UserInputError(`Stripe payment method is not eligible for order ${order.code}`);
         }
-        const apiKey = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'apiKey');
-        const webhookSecret = this.findOrThrowArgValue(stripePaymentMethod.handler.args, 'webhookSecret');
-        return new VendureStripeClient(apiKey, webhookSecret);
+        const { apiKey, webhookSecret } = this.getCredentials(stripePaymentMethod);
+        return new VendureStripeClient(
+            apiKey,
+            webhookSecret,
+            this.options.apiVersion,
+            this.options.httpClient,
+        );
     }
 
     private async findEnabledStripePaymentMethod(ctx: RequestContext): Promise<PaymentMethod> {
@@ -346,12 +371,37 @@ export class StripeService {
         return stripePaymentMethod;
     }
 
-    private findOrThrowArgValue(args: ConfigArg[], name: string): string {
-        const value = args.find(arg => arg.name === name)?.value;
-        if (!value) {
-            throw Error(`No argument named '${name}' found!`);
+    private getCredentials(paymentMethod: PaymentMethod): { apiKey: string; webhookSecret: string } {
+        const { apiKey, webhookSecret } = stripePaymentMethodHandler.resolveArgs(paymentMethod.handler.args);
+        this.assertNotEncrypted('apiKey', apiKey);
+        this.assertNotEncrypted('webhookSecret', webhookSecret);
+        if (!apiKey) {
+            throw Error(`No argument named 'apiKey' found!`);
         }
-        return value;
+        if (!webhookSecret) {
+            throw Error(`No argument named 'webhookSecret' found!`);
+        }
+        return { apiKey, webhookSecret };
+    }
+
+    /**
+     * Without `encryptSecrets`, core does not decrypt the credentials, so a value encrypted while the
+     * option was on would be sent to Stripe as ciphertext and fail as an authentication error.
+     */
+    private assertNotEncrypted(name: string, value: string | undefined): void {
+        if (this.options.encryptSecrets || !value) {
+            return;
+        }
+        // `encryptionStrategy` exists from Vendure 3.8; the plugin also supports older versions.
+        const { encryptionStrategy } = this.configService.systemOptions as {
+            encryptionStrategy?: { isEncrypted(value: string): boolean };
+        };
+        if (encryptionStrategy?.isEncrypted(value)) {
+            throw new Error(
+                `The Stripe '${name}' is stored encrypted, but the StripePlugin \`encryptSecrets\` option ` +
+                    'is not enabled. Enable the option, or enter the credential again on the Stripe payment method.',
+            );
+        }
     }
 
     /**
@@ -362,7 +412,7 @@ export class StripeService {
     private async resolveRequestOptions(
         ctx: RequestContext,
         order: Order,
-    ): Promise<Stripe.RequestOptions | undefined> {
+    ): Promise<StripeRequestOptions | undefined> {
         const additionalOptions = await this.options.requestOptions?.(
             new Injector(this.moduleRef),
             ctx,
@@ -381,7 +431,7 @@ export class StripeService {
     private async getStripeCustomerId(
         ctx: RequestContext,
         activeOrder: Order,
-        requestOptions?: Stripe.RequestOptions,
+        requestOptions?: StripeRequestOptions,
     ): Promise<string | undefined> {
         const [stripe, order] = await Promise.all([
             this.getStripeClient(ctx, activeOrder),

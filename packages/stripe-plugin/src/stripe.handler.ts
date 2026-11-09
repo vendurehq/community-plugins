@@ -1,3 +1,4 @@
+import { ConfigArg } from '@vendure/common/lib/generated-types';
 import {
     CancelPaymentErrorResult,
     CancelPaymentResult,
@@ -9,6 +10,7 @@ import {
     SettlePaymentErrorResult,
     SettlePaymentResult,
 } from '@vendure/core';
+import type { ConfigArgs, ConfigArgValues } from '@vendure/core/dist/common/configurable-operation';
 import Stripe from 'stripe';
 
 import { getAmountFromStripeMinorUnits, isRetryableStripeError } from './stripe-utils';
@@ -19,9 +21,23 @@ const { StripeError } = Stripe.errors;
 let stripeService: StripeService;
 
 /**
+ * A PaymentMethodHandler whose args can also be read outside of its payment callbacks.
+ */
+export class StripePaymentMethodHandler<T extends ConfigArgs> extends PaymentMethodHandler<T> {
+    /**
+     * Returns the stored args in the form the payment callbacks receive them. The value stored on the
+     * PaymentMethod entity is ciphertext when `encryptSecrets` is enabled, so it must be read through
+     * this method. Values stored before encryption was enabled are returned as they are.
+     */
+    resolveArgs(args: ConfigArg[]): ConfigArgValues<T> {
+        return this.argsArrayToHash(args);
+    }
+}
+
+/**
  * The handler for Stripe payments.
  */
-export const stripePaymentMethodHandler = new PaymentMethodHandler({
+export const stripePaymentMethodHandler = new StripePaymentMethodHandler({
     code: 'stripe',
 
     description: [{ languageCode: LanguageCode.en, value: 'Stripe payments' }],
@@ -144,10 +160,8 @@ export const stripePaymentMethodHandler = new PaymentMethodHandler({
     },
 
     async createRefund(ctx, input, amount, order, payment, args): Promise<CreateRefundResult> {
-        // TODO: Consider passing the "reason" property once this feature request is addressed:
-        // https://github.com/vendurehq/vendure/issues/893
         try {
-            const refund = await stripeService.createRefund(ctx, order, payment, amount);
+            const refund = await stripeService.createRefund(ctx, order, payment, amount, input.reason);
             if (refund.status === 'succeeded') {
                 return {
                     state: 'Settled' as const,
@@ -184,3 +198,16 @@ export const stripePaymentMethodHandler = new PaymentMethodHandler({
         }
     },
 });
+
+/**
+ * Sets whether the Stripe credentials are stored encrypted. Core reads the `secret` flag of an arg
+ * during bootstrap, so this must be called from the plugin's `configuration` function. The flag is
+ * always assigned, so that a later bootstrap in the same process does not inherit an earlier value.
+ */
+export function setStripeCredentialsEncrypted(encrypted: boolean): void {
+    const { apiKey, webhookSecret } = stripePaymentMethodHandler.args;
+    for (const arg of [apiKey, webhookSecret]) {
+        // `secret` was added to the arg types in Vendure 3.8, and this plugin also supports older versions.
+        (arg as { secret?: boolean }).secret = encrypted;
+    }
+}

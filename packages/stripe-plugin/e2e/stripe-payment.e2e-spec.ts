@@ -1,11 +1,15 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { CurrencyCode, LanguageCode } from '@vendure/common/lib/generated-types';
-import { Customer, EntityHydrator, mergeConfig, TransactionalConnection } from '@vendure/core';
 import {
-    createProductDocument,
-    createProductVariantsDocument,
-    testCreateStockLocationDocument,
-} from './graphql/admin-definitions';
+    ChannelService,
+    Customer,
+    EntityHydrator,
+    mergeConfig,
+    OrderService,
+    Payment,
+    RequestContext,
+    TransactionalConnection,
+} from '@vendure/core';
 import {
     createErrorResultGuard,
     createTestEnvironment,
@@ -15,14 +19,21 @@ import {
 import nock from 'nock';
 import fetch from 'node-fetch';
 import path from 'path';
-import { Stripe } from 'stripe';
+import Stripe from 'stripe';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
 import { StripePlugin } from '../src';
+import { VendureStripeClient } from '../src/stripe-client';
 import { stripePaymentMethodHandler } from '../src/stripe.handler';
+import { StripeService } from '../src/stripe.service';
 
+import {
+    createProductDocument,
+    createProductVariantsDocument,
+    testCreateStockLocationDocument,
+} from './graphql/admin-definitions';
 import {
     createChannelDocument,
     createPaymentMethodDocument,
@@ -340,7 +351,8 @@ describe('Stripe payments', () => {
         const dbCustomer = await customerRepo.findOneByOrFail({
             emailAddress: customers[1].emailAddress,
         });
-        dbCustomer.customFields.stripeCustomerId = null;
+        // `null` (not `undefined`) so TypeORM writes the column instead of skipping it.
+        (dbCustomer.customFields as { stripeCustomerId: string | null }).stripeCustomerId = null;
         await customerRepo.save(dbCustomer, { reload: false });
 
         await shopClient.asUserWithCredentials(customers[1].emailAddress, 'test');
@@ -441,7 +453,7 @@ describe('Stripe payments', () => {
         };
 
         const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
-        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
         const header = stripeWebhooks.generateTestHeaderString({
             payload: payloadString,
             secret: 'test-signing-secret',
@@ -496,7 +508,7 @@ describe('Stripe payments', () => {
         };
 
         const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
-        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
         // Signed with the wrong secret: verification must fail before the
         // (nonexistent) order is ever looked up.
         const header = stripeWebhooks.generateTestHeaderString({
@@ -543,7 +555,7 @@ describe('Stripe payments', () => {
         };
 
         const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
-        const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
         const header = stripeWebhooks.generateTestHeaderString({
             payload: payloadString,
             secret: 'test-signing-secret',
@@ -585,7 +597,7 @@ describe('Stripe payments', () => {
             };
 
             const payloadString = JSON.stringify(MOCKED_WEBHOOK_PAYLOAD, null, 2);
-            const stripeWebhooks = new Stripe('test-api-secret', { apiVersion: '2023-08-16' }).webhooks;
+            const stripeWebhooks = new Stripe('test-api-secret').webhooks;
             const header = stripeWebhooks.generateTestHeaderString({
                 payload: payloadString,
                 secret: 'test-signing-secret',
@@ -745,6 +757,154 @@ describe('Stripe payments', () => {
             const { createStripePaymentIntent } = await shopClient.query(createStripePaymentIntentDocument);
             expect(createPaymentIntentPayload.amount).toBe((activeOrder!.totalWithTax / 100).toString());
             expect(createPaymentIntentPayload.currency).toBe('jpy');
+        });
+    });
+
+    describe('VendureStripeClient configuration', () => {
+        it('sets Stripe-Version header to the SDK pinned version by default', async () => {
+            let capturedVersion: string | string[] | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/customers')
+                .reply(function reply() {
+                    capturedVersion = this.req.headers['stripe-version'];
+                    return [200, { id: 'cus_test' }];
+                });
+            const client = new VendureStripeClient('sk_test_key', 'whsec_test');
+            await client.customers.create({ email: 'test@example.com' });
+            // The exact pinned version is owned by the SDK release; only the format is checked.
+            expect(capturedVersion).toMatch(/^\d{4}-\d{2}-\d{2}(\.\w+)?$/);
+        });
+
+        it('sets Stripe-Version header to the explicit override when provided', async () => {
+            let capturedVersion: string | string[] | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/customers')
+                .reply(function reply() {
+                    capturedVersion = this.req.headers['stripe-version'];
+                    return [200, { id: 'cus_test' }];
+                });
+            const client = new VendureStripeClient('sk_test_key', 'whsec_test', '2024-06-20' as any);
+            await client.customers.create({ email: 'test@example.com' });
+            expect(capturedVersion).toBe('2024-06-20');
+        });
+
+        async function captureHttpLib(client: VendureStripeClient): Promise<string | undefined> {
+            let userAgent: string | string[] | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/customers')
+                .reply(function reply() {
+                    userAgent = this.req.headers['x-stripe-client-user-agent'];
+                    return [200, { id: 'cus_test' }];
+                });
+            await client.customers.create({ email: 'test@example.com' });
+            return JSON.parse(String(userAgent)).httplib;
+        }
+
+        it('uses the SDK Node HTTP client by default', async () => {
+            const client = new VendureStripeClient('sk_test_key', 'whsec_test');
+            expect(await captureHttpLib(client)).toBe('node');
+        });
+
+        it('uses the httpClient option when provided', async () => {
+            const client = new VendureStripeClient(
+                'sk_test_key',
+                'whsec_test',
+                undefined,
+                Stripe.createFetchHttpClient(),
+            );
+            expect(await captureHttpLib(client)).toBe('fetch');
+        });
+    });
+
+    describe('createRefund', () => {
+        const paymentIntentId = 'pi_for_refund_test';
+        const refundAmount = 1234;
+
+        async function callCreateRefund(reason?: string) {
+            const stripeService: StripeService = server.app.get(StripeService);
+            const orderService = server.app.get(OrderService);
+            const channelService = server.app.get(ChannelService);
+            const channel = await channelService.getDefaultChannel();
+            const ctx = new RequestContext({
+                apiType: 'admin',
+                isAuthorized: true,
+                authorizedAsOwnerOnly: false,
+                channel,
+                languageCode: LanguageCode.en,
+            });
+            const orders = await orderService.findAll(ctx, { take: 1 });
+            const realOrder = orders.items[0];
+            const syntheticPayment = { transactionId: paymentIntentId } as Payment;
+            return stripeService.createRefund(ctx, realOrder, syntheticPayment, refundAmount, reason);
+        }
+
+        it('forwards a Stripe-enum reason as the structured `reason` field', async () => {
+            let payload: Record<string, string> | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/refunds', body => {
+                    payload = body;
+                    return true;
+                })
+                .reply(200, { id: 're_test_enum', status: 'succeeded' });
+            // Reset the Japan channel back to the default before calling.
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            await callCreateRefund('requested_by_customer');
+            expect(payload?.reason).toBe('requested_by_customer');
+            expect(payload?.['metadata[vendureRefundReason]']).toBeUndefined();
+        });
+
+        it('stores a non-enum reason on metadata.vendureRefundReason', async () => {
+            let payload: Record<string, string> | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/refunds', body => {
+                    payload = body;
+                    return true;
+                })
+                .reply(200, { id: 're_test_metadata', status: 'succeeded' });
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            await callCreateRefund('customer-changed-mind');
+            expect(payload?.reason).toBeUndefined();
+            expect(payload?.['metadata[vendureRefundReason]']).toBe('customer-changed-mind');
+        });
+
+        it('forwards neither reason nor metadata when no reason is provided', async () => {
+            let payload: Record<string, string> | undefined;
+            nock('https://api.stripe.com/')
+                .post('/v1/refunds', body => {
+                    payload = body;
+                    return true;
+                })
+                .reply(200, { id: 're_test_no_reason', status: 'succeeded' });
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            await callCreateRefund(undefined);
+            expect(payload?.reason).toBeUndefined();
+            expect(payload?.['metadata[vendureRefundReason]']).toBeUndefined();
+        });
+
+        // Refunds are repeatable: two partial refunds of the same amount on the same PaymentIntent
+        // are distinct refunds. A key derived from (payment intent, amount) would make Stripe replay
+        // the first response for the second call, so no money would move for it while Vendure
+        // records it as settled.
+        it('does not reuse an idempotency key across two same-amount refunds on one payment intent', async () => {
+            const capturedKeys: Array<string | string[] | undefined> = [];
+            nock('https://api.stripe.com/')
+                .post('/v1/refunds')
+                .times(2)
+                .reply(function reply() {
+                    capturedKeys.push(this.req.headers['idempotency-key']);
+                    return [200, { id: `re_idem_${capturedKeys.length}`, status: 'succeeded' }];
+                });
+            adminClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            shopClient.setChannelToken(E2E_DEFAULT_CHANNEL_TOKEN);
+            const first = await callCreateRefund('requested_by_customer');
+            const second = await callCreateRefund('requested_by_customer');
+            expect(first.id).toBe('re_idem_1');
+            expect(second.id).toBe('re_idem_2');
+            expect(capturedKeys).toHaveLength(2);
+            expect(capturedKeys[0]).not.toBe(capturedKeys[1]);
         });
     });
 });

@@ -1,6 +1,8 @@
 import { CurrencyCode, LanguageCode, Order } from '@vendure/core';
 import Stripe from 'stripe';
 
+import { StripeMetadata } from './stripe-types';
+
 /**
  * @description
  * From the [Stripe docs](https://stripe.com/docs/currencies#zero-decimal):
@@ -44,7 +46,7 @@ function currencyHasFractionPart(currencyCode: CurrencyCode): boolean {
  * Events whose object has no `metadata` at all (e.g. a Balance) are reported as not expected rather than throwing.
  */
 export function isExpectedVendureStripeEventMetadata(
-    metadata: Stripe.Metadata | null | undefined,
+    metadata: StripeMetadata | null | undefined,
 ): metadata is {
     channelToken: string;
     orderCode: string;

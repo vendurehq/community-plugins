@@ -20,6 +20,7 @@ import type { Response } from 'express';
 import Stripe from 'stripe';
 
 import { loggerCtx, STRIPE_PLUGIN_OPTIONS } from './constants';
+import { StripeEvent, StripePaymentIntent } from './stripe-types';
 import { isExpectedVendureStripeEventMetadata, isRetryableStripeError } from './stripe-utils';
 import { stripePaymentMethodHandler } from './stripe.handler';
 import { StripeService } from './stripe.service';
@@ -62,8 +63,8 @@ export class StripeController {
         // Everything parsed here is untrusted until the signature is verified
         // below. Only the event shape is inspected pre-verification, so that
         // foreign payment intents can still be skipped with a 200.
-        const unverifiedEvent = JSON.parse(request.body.toString()) as Stripe.Event;
-        const unverifiedPaymentIntent = unverifiedEvent.data.object as Stripe.PaymentIntent;
+        const unverifiedEvent = JSON.parse(request.body.toString()) as StripeEvent;
+        const unverifiedPaymentIntent = unverifiedEvent.data.object as StripePaymentIntent;
 
         if (!unverifiedPaymentIntent) {
             Logger.error(noPaymentIntentErrorMessage, loggerCtx);
@@ -90,7 +91,7 @@ export class StripeController {
         // Verify the signature before looking up the order: the secret is
         // resolved from the channel, so no order is needed yet. From here on,
         // `event` is the trusted payload returned by Stripe's SDK.
-        let event: Stripe.Event;
+        let event: StripeEvent;
         try {
             // Throws an error if the signature is invalid
             event = await this.stripeService.constructEventForChannel(
@@ -104,7 +105,7 @@ export class StripeController {
             return;
         }
 
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        const paymentIntent = event.data.object as StripePaymentIntent;
         const { orderCode, orderId } = paymentIntent.metadata as {
             orderCode: string;
             orderId: string;
@@ -439,7 +440,7 @@ export class StripeController {
      * the authorization event. A temporary Stripe error is thrown so the webhook responds with a 5xx.
      */
     private async captureAndSettle(outerCtx: RequestContext, order: Order, paymentIntentId: string) {
-        let captured: Stripe.PaymentIntent;
+        let captured: StripePaymentIntent;
         try {
             captured = await this.stripeService.capturePaymentIntent(outerCtx, order, paymentIntentId);
         } catch (e: any) {
