@@ -11,6 +11,10 @@ import {
     TransactionalConnection,
 } from '@vendure/core';
 import {
+    OrderStateTransitionError,
+    PaymentFailedError,
+} from '@vendure/core/dist/common/error/generated-graphql-shop-errors';
+import {
     createErrorResultGuard,
     createTestEnvironment,
     E2E_DEFAULT_CHANNEL_TOKEN,
@@ -20,12 +24,13 @@ import nock from 'nock';
 import fetch from 'node-fetch';
 import path from 'path';
 import Stripe from 'stripe';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
 import { StripePlugin } from '../src';
 import { VendureStripeClient } from '../src/stripe-client';
+import { StripeController } from '../src/stripe.controller';
 import { stripePaymentMethodHandler } from '../src/stripe.handler';
 import { StripeService } from '../src/stripe.service';
 
@@ -38,6 +43,7 @@ import {
     createChannelDocument,
     createPaymentMethodDocument,
     getCustomerListDocument,
+    getOrderPaymentsDocument,
 } from './graphql/admin-definitions';
 import { ResultOf } from './graphql/graphql-admin';
 import { FragmentOf } from './graphql/graphql-shop';
@@ -66,6 +72,41 @@ describe('Stripe payments', () => {
     const orderGuard: ErrorResultGuard<FragmentOf<typeof testOrderFragment>> = createErrorResultGuard(
         input => !!input.lines,
     );
+
+    async function postSucceededWebhook(
+        currentOrder: Pick<FragmentOf<typeof testOrderFragment>, 'id' | 'code' | 'totalWithTax'>,
+        paymentIntentId: string,
+    ) {
+        const payload = JSON.stringify({
+            id: `evt_${paymentIntentId}`,
+            object: 'event',
+            api_version: '2022-11-15',
+            type: 'payment_intent.succeeded',
+            data: {
+                object: {
+                    id: paymentIntentId,
+                    currency: 'usd',
+                    status: 'succeeded',
+                    amount_received: currentOrder.totalWithTax,
+                    metadata: {
+                        orderCode: currentOrder.code,
+                        orderId: currentOrder.id.replace('T_', ''),
+                        channelToken: E2E_DEFAULT_CHANNEL_TOKEN,
+                    },
+                },
+            },
+        });
+        const signature = new Stripe('test-api-secret').webhooks.generateTestHeaderString({
+            payload,
+            secret: 'test-signing-secret',
+        });
+        return fetch(`http://localhost:${serverPort}/payments/stripe`, {
+            method: 'post',
+            body: payload,
+            headers: { 'Content-Type': 'application/json', 'Stripe-Signature': signature },
+        });
+    }
+
     beforeAll(async () => {
         serverPort = devConfig.apiOptions.port;
         await server.init({
@@ -478,6 +519,200 @@ describe('Stripe payments', () => {
         // throws an error of 'error.entity-with-id-not-found'
         expect(result.status).toEqual(200);
     });
+
+    it('Should not add a second Payment when the same event is redelivered', async () => {
+        // Stripe retries on its own schedule after a slow or failed response, and an
+        // endpoint can be replayed, so the settled event above can arrive again. This
+        // replays it byte-for-byte: same PaymentIntent, same signature.
+        const result = await postSucceededWebhook(order, 'pi_0');
+
+        // A redelivery is not an error: Stripe must be told the event was handled,
+        // otherwise it keeps retrying an event that is already settled.
+        expect(result.status).toEqual(200);
+
+        const { order: orderWithPayments } = await adminClient.query(getOrderPaymentsDocument, {
+            id: order.id,
+        });
+        const paymentsForIntent = orderWithPayments!.payments!.filter(
+            payment => payment.transactionId === 'pi_0',
+        );
+        expect(paymentsForIntent.length).toEqual(1);
+    });
+
+    it('Should settle only once when the same event is delivered concurrently', async () => {
+        // Overlapping deliveries of the same event: the second request must behave like
+        // a sequential replay (200, no second payment) even when the first settlement is
+        // still in flight.
+        //
+        // The overlap is forced deterministically: the first settlement is held at
+        // addPaymentToOrder (past its idempotency check) while the second delivery runs.
+        // customers[0]'s earlier order settled above, so this starts a new active order.
+        await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
+        const { addItemToOrder: concurrentOrder } = await shopClient.query(addItemToOrderDocument, {
+            productVariantId: 'T_1',
+            quantity: 1,
+        });
+        orderGuard.assertSuccess(concurrentOrder);
+        await setShipping(shopClient);
+        const { activeOrder: concurrentOrderWithShipping } = await shopClient.query(getActiveOrderDocument);
+
+        const payload = JSON.stringify({
+            id: 'evt_concurrent',
+            object: 'event',
+            api_version: '2022-11-15',
+            type: 'payment_intent.succeeded',
+            data: {
+                object: {
+                    id: 'pi_concurrent',
+                    currency: 'usd',
+                    status: 'succeeded',
+                    amount_received: concurrentOrderWithShipping!.totalWithTax,
+                    metadata: {
+                        orderCode: concurrentOrder.code,
+                        orderId: concurrentOrder.id.replace('T_', ''),
+                        channelToken: E2E_DEFAULT_CHANNEL_TOKEN,
+                    },
+                },
+            },
+        });
+        const stripeWebhooks = new Stripe('test-api-secret').webhooks;
+        const postWebhook = () => {
+            // Each delivery carries its own signature, as Stripe signs every delivery
+            // attempt separately.
+            const header = stripeWebhooks.generateTestHeaderString({
+                payload,
+                secret: 'test-signing-secret',
+            });
+            return fetch(`http://localhost:${serverPort}/payments/stripe`, {
+                method: 'post',
+                body: payload,
+                headers: { 'Content-Type': 'application/json', 'Stripe-Signature': header },
+            });
+        };
+
+        // new Promise executor (not Promise.withResolvers): the repo still supports
+        // Node 20, which lacks withResolvers.
+        const deferred = () => {
+            let resolve!: () => void;
+            const promise = new Promise<void>(r => {
+                resolve = r;
+            });
+            return { promise, resolve };
+        };
+        const firstReached = deferred();
+        const firstGate = deferred();
+        const secondGate = deferred();
+
+        const orderService = server.app.get(OrderService);
+        const originalAddPayment = orderService.addPaymentToOrder.bind(orderService);
+        const addPaymentSpy = vi
+            .spyOn(orderService, 'addPaymentToOrder')
+            .mockImplementationOnce(async (...args) => {
+                firstReached.resolve();
+                await firstGate.promise;
+                return originalAddPayment(...args);
+            })
+            .mockImplementationOnce(async (...args) => {
+                await secondGate.promise;
+                return originalAddPayment(...args);
+            });
+
+        try {
+            const firstDelivery = postWebhook();
+            // The first settlement is now in flight, past its idempotency check: hold
+            // it there while the second delivery overlaps it.
+            await firstReached.promise;
+            const secondDelivery = postWebhook();
+            // Let the overlap happen: without serialization the second delivery runs its
+            // own check (seeing no payment yet) and reaches addPaymentToOrder too; with
+            // serialization it waits outside.
+            await new Promise(r => setTimeout(r, 250));
+            firstGate.resolve();
+            const firstResult = await firstDelivery;
+            secondGate.resolve();
+            const secondResult = await secondDelivery;
+
+            expect(firstResult.status).toEqual(200);
+            expect(secondResult.status).toEqual(200);
+
+            const { order: orderWithPayments } = await adminClient.query(getOrderPaymentsDocument, {
+                id: concurrentOrder.id,
+            });
+            const paymentsForIntent = orderWithPayments!.payments!.filter(
+                payment => payment.transactionId === 'pi_concurrent',
+            );
+            expect(paymentsForIntent.length).toEqual(1);
+            expect(orderWithPayments!.state).toEqual('PaymentSettled');
+        } finally {
+            addPaymentSpy.mockRestore();
+        }
+    });
+
+    it.each(['lock acquisition', 'state transition', 'payment creation'])(
+        'Should return 500 on failed %s and settle exactly once on redelivery',
+        async failureStage => {
+            await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
+            const { addItemToOrder: retryOrder } = await shopClient.query(addItemToOrderDocument, {
+                productVariantId: 'T_1',
+                quantity: 1,
+            });
+            orderGuard.assertSuccess(retryOrder);
+            await setShipping(shopClient);
+            const { activeOrder } = await shopClient.query(getActiveOrderDocument);
+            orderGuard.assertSuccess(activeOrder!);
+            const paymentIntentId = `pi_retry_${failureStage.replaceAll(' ', '_')}`;
+            const orderService = server.app.get(OrderService);
+            const failureSpy =
+                failureStage === 'lock acquisition'
+                    ? vi
+                          .spyOn(
+                              StripeController.prototype as unknown as {
+                                  lockOrderForUpdate: (...args: unknown[]) => Promise<void>;
+                              },
+                              'lockOrderForUpdate',
+                          )
+                          .mockRejectedValueOnce(new Error('Simulated database lock failure'))
+                    : failureStage === 'state transition'
+                      ? vi
+                            .spyOn(orderService, 'transitionToState')
+                            .mockResolvedValue(
+                                new OrderStateTransitionError({
+                                    fromState: 'AddingItems',
+                                    toState: 'ArrangingPayment',
+                                    transitionError: 'Simulated transition failure',
+                                }),
+                            )
+                      : vi
+                            .spyOn(orderService, 'addPaymentToOrder')
+                            .mockResolvedValue(
+                                new PaymentFailedError({
+                                    paymentErrorMessage: 'Simulated settlement failure',
+                                }),
+                            );
+
+            try {
+                const failedDelivery = await postSucceededWebhook(activeOrder, paymentIntentId);
+                expect(failedDelivery.status).toEqual(500);
+                const { order: failedOrder } = await adminClient.query(getOrderPaymentsDocument, {
+                    id: retryOrder.id,
+                });
+                expect(failedOrder!.state).toEqual(activeOrder.state);
+                expect(failedOrder!.payments).toHaveLength(0);
+            } finally {
+                failureSpy.mockRestore();
+            }
+
+            expect((await postSucceededWebhook(activeOrder, paymentIntentId)).status).toEqual(200);
+            expect((await postSucceededWebhook(activeOrder, paymentIntentId)).status).toEqual(200);
+            const { order: settledOrder } = await adminClient.query(getOrderPaymentsDocument, {
+                id: retryOrder.id,
+            });
+            expect(settledOrder!.state).toEqual('PaymentSettled');
+            expect(
+                settledOrder!.payments!.filter(payment => payment.transactionId === paymentIntentId),
+            ).toHaveLength(1);
+        },
+    );
 
     // https://github.com/vendurehq/community-plugins/issues/45
     it('Should reject an invalid signature without looking up the order', async () => {
