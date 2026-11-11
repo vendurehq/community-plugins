@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 1.0.3 (2026-11-11)
+
+### Bug Fixes
+
+* **mollie-plugin:** enforce consistent order access checks during payment status sync ([#70](https://github.com/vendurehq/community-plugins/pull/70))
+
 ## 1.0.2 (2026-10-28)
 
 ### Bug Fixes
