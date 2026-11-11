@@ -54,7 +54,8 @@ const commonSchemaExtensions = gql`
         """
         Fetch the payment status from Mollie and update the order status in Vendure accordingly.
         Use this mutation when the Mollie webhook is delayed and you want to manually force update the order status.
-        Throws a ForbiddenError for unauthenticated calls when the order is not yet settled.
+        For callers authorized as owners, access follows the configured OrderByCodeAccessStrategy.
+        Throws a ForbiddenError if access to the order is denied.
         """
         syncMolliePaymentStatus(orderCode: String!): Order
     }

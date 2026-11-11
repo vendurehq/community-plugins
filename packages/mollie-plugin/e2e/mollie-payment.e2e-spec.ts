@@ -69,6 +69,8 @@ let customers: ResultOf<typeof getCustomerListDocument>['customers']['items'];
 let order: FragmentOf<typeof testOrderFragment>;
 let serverPort: number;
 const SURCHARGE_AMOUNT = -20000;
+// Exceeds the default OrderByCodeAccessStrategy anonymous access duration of 2 hours.
+const EXPIRED_ORDER_AGE_MS = 3 * 60 * 60 * 1000;
 
 describe('Mollie payments', () => {
     beforeAll(async () => {
@@ -803,21 +805,38 @@ describe('Mollie payments', () => {
             expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
         });
 
+        it('Allows an administrator to sync a settled order through the Admin API', async () => {
+            const { syncMolliePaymentStatus } = await adminClient.query<any>(syncMolliePaymentStatusDocument, {
+                orderCode: settledOrderCode,
+            });
+            expect(syncMolliePaymentStatus.code).toBe(settledOrderCode);
+            expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
+        });
+
         it('Refuses guest access to an order settled three hours ago', async () => {
             await server.app.get(TransactionalConnection).rawConnection.getRepository(Order).update(
                 { code: settledOrderCode },
-                { orderPlacedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+                { orderPlacedAt: new Date(Date.now() - EXPIRED_ORDER_AGE_MS) },
             );
             await expect(
                 shopClient.query(syncMolliePaymentStatusDocument, { orderCode: settledOrderCode }),
             ).rejects.toThrow(/not currently authorized/i);
         });
 
-        it('Refuses access to a settled order belonging to another customer', async () => {
+        it('Allows a customer to retrieve their own settled order after the guest access window', async () => {
             await server.app.get(TransactionalConnection).rawConnection.getRepository(Order).update(
                 { code: settledOrderCode },
-                { orderPlacedAt: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+                { orderPlacedAt: new Date(Date.now() - EXPIRED_ORDER_AGE_MS) },
             );
+            await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
+            const { syncMolliePaymentStatus } = await shopClient.query<any>(syncMolliePaymentStatusDocument, {
+                orderCode: settledOrderCode,
+            });
+            expect(syncMolliePaymentStatus.code).toBe(settledOrderCode);
+            expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
+        });
+
+        it('Refuses access to a settled order belonging to another customer', async () => {
             await shopClient.asUserWithCredentials(customers[1].emailAddress, 'test');
             await expect(
                 shopClient.query(syncMolliePaymentStatusDocument, { orderCode: settledOrderCode }),
@@ -825,7 +844,7 @@ describe('Mollie payments', () => {
         });
     });
 
-    describe('Force status update when no webhook is received', () => {
+    describe.each(['Shop API', 'Admin API'])('Force status update when no webhook is received (%s)', api => {
         it('Should prepare a new order', async () => {
             await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
             const { addItemToOrder } = await shopClient.query(addItemToOrderDocument, {
@@ -874,8 +893,9 @@ describe('Mollie payments', () => {
                     status: OrderStatus.paid,
                     amount: { value: '3127.60', currency: 'EUR' },
                 });
-            // Call the sync mutation
-            const { syncMolliePaymentStatus } = await shopClient.query<any>(syncMolliePaymentStatusDocument, {
+            // Call the same mutation through either public API.
+            const client = api === 'Admin API' ? adminClient : shopClient;
+            const { syncMolliePaymentStatus } = await client.query<any>(syncMolliePaymentStatusDocument, {
                 orderCode: order.code,
             });
             expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
