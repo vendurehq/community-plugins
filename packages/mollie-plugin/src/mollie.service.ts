@@ -473,6 +473,9 @@ export class MollieService {
             throw new ForbiddenError(LogLevel.Verbose);
         }
         if (!VENDURE_STATES_THAT_REQUIRE_ACTION.includes(order.state)) {
+            if (!(await this.configService.orderOptions.orderByCodeAccessStrategy.canAccessOrder(ctx, order))) {
+                throw new ForbiddenError(LogLevel.Verbose);
+            }
             Logger.info(
                 `syncMolliePaymentStatus: Order ${order.code} is already '${order.state}', no need to fetch Mollie payments.`,
                 loggerCtx,
