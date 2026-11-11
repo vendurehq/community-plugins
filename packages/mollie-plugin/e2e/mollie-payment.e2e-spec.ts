@@ -6,9 +6,11 @@ import {
     LanguageCode,
     Logger,
     mergeConfig,
+    Order,
     OrderPlacedEvent,
     OrderService,
     RequestContext,
+    TransactionalConnection,
 } from '@vendure/core';
 import {
     settlePaymentDocument,
@@ -24,7 +26,7 @@ import gql from 'graphql-tag';
 import nock from 'nock';
 import fetch from 'node-fetch';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { initialData } from '../../../e2e-common/e2e-initial-data';
 import { TEST_SETUP_TIMEOUT_MS, testConfig } from '../../../e2e-common/test-config';
@@ -67,6 +69,8 @@ let customers: ResultOf<typeof getCustomerListDocument>['customers']['items'];
 let order: FragmentOf<typeof testOrderFragment>;
 let serverPort: number;
 const SURCHARGE_AMOUNT = -20000;
+// Exceeds the default OrderByCodeAccessStrategy anonymous access duration of 2 hours.
+const EXPIRED_ORDER_AGE_MS = 3 * 60 * 60 * 1000;
 
 describe('Mollie payments', () => {
     beforeAll(async () => {
@@ -775,7 +779,72 @@ describe('Mollie payments', () => {
         });
     });
 
-    describe('Force status update when no webhook is received', () => {
+    describe('Access to settled orders when syncing payment status', () => {
+        let settledOrderCode: string;
+
+        beforeEach(async () => {
+            await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
+            const { addItemToOrder } = await shopClient.query(addItemToOrderDocument, {
+                productVariantId: 'T_1',
+                quantity: 1,
+            });
+            settledOrderCode = (addItemToOrder as FragmentOf<typeof testOrderFragment>).code;
+            // Set up an already settled order, without invoking Mollie.
+            await server.app.get(TransactionalConnection).rawConnection.getRepository(Order).update(
+                { code: settledOrderCode },
+                { state: 'PaymentSettled', active: false, orderPlacedAt: new Date() },
+            );
+            await shopClient.asAnonymousUser();
+        });
+
+        it('Allows a guest to retrieve a recently settled order', async () => {
+            const { syncMolliePaymentStatus } = await shopClient.query<any>(syncMolliePaymentStatusDocument, {
+                orderCode: settledOrderCode,
+            });
+            expect(syncMolliePaymentStatus.code).toBe(settledOrderCode);
+            expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
+        });
+
+        it('Allows an administrator to sync a settled order through the Admin API', async () => {
+            const { syncMolliePaymentStatus } = await adminClient.query<any>(syncMolliePaymentStatusDocument, {
+                orderCode: settledOrderCode,
+            });
+            expect(syncMolliePaymentStatus.code).toBe(settledOrderCode);
+            expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
+        });
+
+        it('Refuses guest access to an order settled three hours ago', async () => {
+            await server.app.get(TransactionalConnection).rawConnection.getRepository(Order).update(
+                { code: settledOrderCode },
+                { orderPlacedAt: new Date(Date.now() - EXPIRED_ORDER_AGE_MS) },
+            );
+            await expect(
+                shopClient.query(syncMolliePaymentStatusDocument, { orderCode: settledOrderCode }),
+            ).rejects.toThrow(/not currently authorized/i);
+        });
+
+        it('Allows a customer to retrieve their own settled order after the guest access window', async () => {
+            await server.app.get(TransactionalConnection).rawConnection.getRepository(Order).update(
+                { code: settledOrderCode },
+                { orderPlacedAt: new Date(Date.now() - EXPIRED_ORDER_AGE_MS) },
+            );
+            await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
+            const { syncMolliePaymentStatus } = await shopClient.query<any>(syncMolliePaymentStatusDocument, {
+                orderCode: settledOrderCode,
+            });
+            expect(syncMolliePaymentStatus.code).toBe(settledOrderCode);
+            expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');
+        });
+
+        it('Refuses access to a settled order belonging to another customer', async () => {
+            await shopClient.asUserWithCredentials(customers[1].emailAddress, 'test');
+            await expect(
+                shopClient.query(syncMolliePaymentStatusDocument, { orderCode: settledOrderCode }),
+            ).rejects.toThrow(/not currently authorized/i);
+        });
+    });
+
+    describe.each(['Shop API', 'Admin API'])('Force status update when no webhook is received (%s)', api => {
         it('Should prepare a new order', async () => {
             await shopClient.asUserWithCredentials(customers[0].emailAddress, 'test');
             const { addItemToOrder } = await shopClient.query(addItemToOrderDocument, {
@@ -824,8 +893,9 @@ describe('Mollie payments', () => {
                     status: OrderStatus.paid,
                     amount: { value: '3127.60', currency: 'EUR' },
                 });
-            // Call the sync mutation
-            const { syncMolliePaymentStatus } = await shopClient.query<any>(syncMolliePaymentStatusDocument, {
+            // Call the same mutation through either public API.
+            const client = api === 'Admin API' ? adminClient : shopClient;
+            const { syncMolliePaymentStatus } = await client.query<any>(syncMolliePaymentStatusDocument, {
                 orderCode: order.code,
             });
             expect(syncMolliePaymentStatus.state).toBe('PaymentSettled');

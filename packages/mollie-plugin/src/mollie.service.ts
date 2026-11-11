@@ -473,6 +473,7 @@ export class MollieService {
             throw new ForbiddenError(LogLevel.Verbose);
         }
         if (!VENDURE_STATES_THAT_REQUIRE_ACTION.includes(order.state)) {
+            await this.assertCanAccessOrder(ctx, order);
             Logger.info(
                 `syncMolliePaymentStatus: Order ${order.code} is already '${order.state}', no need to fetch Mollie payments.`,
                 loggerCtx,
@@ -523,10 +524,18 @@ export class MollieService {
             );
         }
 
-        if (!(await this.configService.orderOptions.orderByCodeAccessStrategy.canAccessOrder(ctx, order))) {
+        await this.assertCanAccessOrder(ctx, order);
+        return order;
+    }
+
+    /** Apply order-code access rules only when the caller is authorized as the owner. */
+    private async assertCanAccessOrder(ctx: RequestContext, order: Order): Promise<void> {
+        if (
+            ctx.authorizedAsOwnerOnly &&
+            !(await this.configService.orderOptions.orderByCodeAccessStrategy.canAccessOrder(ctx, order))
+        ) {
             throw new ForbiddenError(LogLevel.Verbose);
         }
-        return order;
     }
 
     /**
