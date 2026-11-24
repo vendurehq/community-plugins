@@ -82,15 +82,26 @@ This plugin includes built-in support for [tracing](https://docs.sentry.io/produ
 To enable tracing, preload the instrument file as described in [Step 1](#step-1-preload-the-sentry-instrument-file).
 This ensures that the Sentry SDK is initialized before any other code is executed.
 
-You can also set the `tracesSampleRate` and `profilesSampleRate` options to control the sample rate for
-tracing and profiling, with the following environment variables:
+You can also control the sample rate for tracing and profiling with the following environment variables:
 
-- `SENTRY_TRACES_SAMPLE_RATE`
-- `SENTRY_PROFILES_SAMPLE_RATE`
+- `SENTRY_TRACES_SAMPLE_RATE`, passed to the SDK as `tracesSampleRate`
+- `SENTRY_PROFILES_SAMPLE_RATE`, passed to the SDK as `profileSessionSampleRate`, with `profileLifecycle: 'trace'`
+  so that a sampled profile runs for as long as there is an active trace
 
 The sample rate for tracing should be between 0 and 1. The sample rate for profiling should be between 0 and 1.
 
 By default, both are set to `undefined`, which means that tracing and profiling are disabled.
+
+## Data Collection
+
+The instrument file sets the SDK's `dataCollection` option to the defaults that Sentry SDK v10 applied
+with `sendDefaultPii` off: no request or response bodies, cookies, user info, database query data,
+queue payloads or GraphQL documents and variables, and headers and query params that identify the
+client (IP, forwarding and user headers) are dropped. Sentry SDK v11 collects all of these when the
+option is left unset.
+
+If you need a different setting, call `Sentry.init()` from your own instrument file instead of
+preloading `@vendure-community/sentry-plugin/instrument`.
 
 ## Instrumenting Your Own Code
 

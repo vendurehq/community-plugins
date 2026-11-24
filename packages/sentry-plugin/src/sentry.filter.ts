@@ -1,7 +1,7 @@
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Catch, ExecutionContext } from '@nestjs/common';
 import { GqlContextType, GqlExecutionContext } from '@nestjs/graphql';
-import { setContext } from '@sentry/node';
+import { setContext } from '@sentry/nestjs';
 import { ExceptionLoggerFilter, ForbiddenError, I18nError, LogLevel } from '@vendure/core';
 
 import { SentryService } from './sentry.service';
