@@ -1,6 +1,9 @@
-import type { ConsoleLevel } from '@sentry/core';
 import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
+
+type ConsoleLevel = NonNullable<
+    NonNullable<Parameters<typeof Sentry.consoleLoggingIntegration>[0]>['levels']
+>[number];
 
 const SENTRY_DSN = process.env.SENTRY_DSN;
 const SENTRY_TRACES_SAMPLE_RATE = process.env.SENTRY_TRACES_SAMPLE_RATE
@@ -14,6 +17,12 @@ const SENTRY_CAPTURE_LOG_LEVELS = process.env.SENTRY_CAPTURE_LOG_LEVELS
     ? process.env.SENTRY_CAPTURE_LOG_LEVELS.split(',').map(l => l.trim())
     : ['log', 'warn', 'error'];
 
+/**
+ * Headers and query params whose names contain one of these fragments are dropped.
+ * This is the list the Sentry SDK v10 applied when `sendDefaultPii` was off.
+ */
+const PII_DENY_LIST = ['forwarded', '-ip', 'remote-', 'via', '-user'];
+
 if (!SENTRY_DSN) {
     // eslint-disable-next-line
     console.error('SENTRY_DSN is not set');
@@ -22,6 +31,8 @@ if (!SENTRY_DSN) {
         dsn: SENTRY_DSN,
         integrations: [
             nodeProfilingIntegration(),
+            // Since SDK v11 logs are captured whenever a logging integration is installed,
+            // so SENTRY_ENABLE_LOGS decides whether to add it.
             ...(SENTRY_ENABLE_LOGS
                 ? [Sentry.consoleLoggingIntegration({ levels: SENTRY_CAPTURE_LOG_LEVELS as ConsoleLevel[] })]
                 : []),
@@ -36,16 +47,32 @@ if (!SENTRY_DSN) {
         /**
          * @description
          * The sample rate for profiling. Value should be between 0 and 1.
+         * A sampled profile runs for the lifetime of each sampled trace.
          * By default, profiling is disabled.
          * @default undefined
          */
-        profilesSampleRate: SENTRY_PROFILES_SAMPLE_RATE,
-
+        profileSessionSampleRate: SENTRY_PROFILES_SAMPLE_RATE,
+        profileLifecycle: 'trace',
         /**
          * @description
-         * Enable logs to be sent to Sentry.
-         * @default false
+         * Leaving `dataCollection` unset makes SDK v11 collect request and response bodies,
+         * cookies, user info and database query data. A commerce server handles passwords,
+         * addresses and payment data in exactly those places, so this keeps the restrictive
+         * defaults of SDK v10.
          */
-        enableLogs: SENTRY_ENABLE_LOGS,
+        dataCollection: {
+            userInfo: false,
+            cookies: false,
+            httpHeaders: {
+                request: { deny: PII_DENY_LIST },
+                response: { deny: PII_DENY_LIST },
+            },
+            httpBodies: [],
+            urlQueryParams: { deny: PII_DENY_LIST },
+            genAI: { inputs: false, outputs: false },
+            databaseQueryData: false,
+            queues: false,
+            graphQL: { document: false, variables: false },
+        },
     });
 }

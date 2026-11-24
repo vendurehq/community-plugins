@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CaptureContext, StartSpanOptions } from '@sentry/core';
-import * as Sentry from '@sentry/node';
+import type { CaptureContext } from '@sentry/nestjs';
+import * as Sentry from '@sentry/nestjs';
 
 import { SENTRY_PLUGIN_OPTIONS } from './constants';
 import { SentryPluginOptions } from './types';
+
+type StartSpanOptions = Parameters<typeof Sentry.startSpanManual>[0];
 
 /**
  * @description
